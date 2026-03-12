@@ -57,7 +57,7 @@ DEFAULT_CONFIG = {
     "strategies": ["contrarian"],
     "kafka_bootstrap": "localhost:9092",
     "market_interval": 300,
-    "fee_rate": 0.001,
+    "fee_rate": 0.05,
     "tax_rate": 0.30,
     "snapshot_interval": 600,
     "data_dir": "./data",
@@ -190,11 +190,11 @@ def run_wizard() -> dict:
     config["market_interval"] = IntPrompt.ask(
         "  Market data interval (seconds)", default=300
     )
-    fee_str = Prompt.ask("  Fee rate (decimal, e.g. 0.001)", default="0.001")
+    fee_str = Prompt.ask("  Fee rate (decimal, e.g. 0.05)", default="0.05")
     try:
         config["fee_rate"] = float(fee_str)
     except ValueError:
-        config["fee_rate"] = 0.001
+        config["fee_rate"] = 0.05
 
     # Summary
     console.print()
@@ -365,7 +365,7 @@ def _edit_config(config: dict) -> dict:
         config["market_interval"] = IntPrompt.ask(
             "  Market data interval (seconds)", default=config.get("market_interval", 300)
         )
-        fee_str = Prompt.ask("  Fee rate", default=str(config.get("fee_rate", 0.001)))
+        fee_str = Prompt.ask("  Fee rate", default=str(config.get("fee_rate", 0.05)))
         try:
             config["fee_rate"] = float(fee_str)
         except ValueError:
@@ -620,7 +620,7 @@ def launch_arena(config: dict) -> int:
     """
     bootstrap = config.get("kafka_bootstrap", "localhost:9092")
     interval = str(config.get("market_interval", 300))
-    fee_rate = str(config.get("fee_rate", 0.001))
+    fee_rate = str(config.get("fee_rate", 0.05))
     tax_rate = str(config.get("tax_rate", 0.30))
     snapshot_interval = str(config.get("snapshot_interval", 600))
     data_dir = config.get("data_dir", "./data")

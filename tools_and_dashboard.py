@@ -63,8 +63,8 @@ def parse_args():
         "--fee-rate",
         type=float,
         default=None,
-        help="Transaction fee rate as a decimal (e.g. 0.001 = 0.1%%). "
-        "Overrides TRADE_FEE_RATE env var. Default: 0.001",
+        help="Transaction fee rate as a decimal (e.g. 0.05 = 5%%). "
+        "Overrides TRADE_FEE_RATE env var. Default: 0.05",
     )
     parser.add_argument(
         "--trading-mode",

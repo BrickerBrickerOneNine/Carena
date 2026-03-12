@@ -26,7 +26,7 @@ cd ~/calfkit-broker && make dev-up
 ### Component launch order (each in its own terminal):
 1. Kafka broker (`make dev-up` in calfkit-broker)
 2. `coinbase_connector.py --bootstrap-servers <url> [--interval 60]`
-3. `tools_and_dashboard.py --bootstrap-servers <url> [--snapshot-interval 600] [--data-dir ./data] [--fee-rate 0.001]`
+3. `tools_and_dashboard.py --bootstrap-servers <url> [--snapshot-interval 600] [--data-dir ./data] [--fee-rate 0.05]`
 4. `deploy_chat_node.py --name <node-name> --model-id <model> --bootstrap-servers <url> --api-key <key> [--base-url <url>] [--reasoning-effort <level>]`
 5. `deploy_router_node.py --name <agent-name> --chat-node-name <node-name> --strategy <default|momentum|brainrot|scalper> --bootstrap-servers <url>`
 6. `response_viewer.py --bootstrap-servers <url>` (optional)
@@ -61,7 +61,7 @@ Coinbase WebSocket → coinbase_kafka_connector.py → Kafka → deploy_router_n
 | Location | Constant | Default | Purpose |
 |----------|----------|---------|---------|
 | `trading_tools.py` | `INITIAL_CASH` | `100_000.0` | Starting cash per agent |
-| `trading_tools.py` | `TRADE_FEE_RATE` | `0.001` (0.1%) | Per-trade fee rate |
+| `trading_tools.py` | `TRADE_FEE_RATE` | `0.05` (5%) | Per-trade fee rate |
 | `coinbase_consumer.py` | `DEFAULT_PRODUCTS` | BTC-USD, FARTCOIN-USD, SOL-USD | Tracked products |
 | `coinbase_kafka_connector.py` | `DEFAULT_MIN_INTERVAL` | `60` | Seconds between market data pushes |
 

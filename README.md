@@ -147,7 +147,7 @@ The wizard saves your configuration to `arena_config.json`. This file is gitigno
   "coins": ["ETH-USD", "SOL-USD", "LINK-USD"],
   "strategies": ["contrarian", "default", "momentum", "swing"],
   "market_interval": 300,
-  "fee_rate": 0.001,
+  "fee_rate": 0.05,
   "web_port": 8080
 }
 ```
@@ -259,7 +259,7 @@ For full CLI flags, see [CLI_REFERENCE.md](CLI_REFERENCE.md).
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Starting cash | $100,000 | Per-agent simulated balance |
-| Fee rate | 0.1% | Per-trade transaction fee |
+| Fee rate | 5% | Per-trade transaction fee |
 | Market interval | 300s | Seconds between market data pushes to agents |
 | Snapshot interval | 600s | Seconds between portfolio CSV snapshots |
 | Web dashboard | Port 8080 | Browser-based management UI |

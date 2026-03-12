@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ── Configuration ────────────────────────────────────────────────
 
 INITIAL_CASH = 1_000.0
-TRADE_FEE_RATE = float(os.getenv("TRADE_FEE_RATE", "0.001"))  # 0.1% default (Coinbase taker fee)
+TRADE_FEE_RATE = float(os.getenv("TRADE_FEE_RATE", "0.05"))  # 5% default
 TAX_RATE = float(os.getenv("TAX_RATE", "0.30"))  # 30% combined federal + state short-term cap gains
 
 MAX_BALANCE_HISTORY = 300  # ~25 min at 5s intervals
