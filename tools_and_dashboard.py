@@ -85,6 +85,12 @@ def parse_args():
         help="Coinbase CDP API secret / EC private key (required for live mode)",
     )
     parser.add_argument(
+        "--coinbase-key-file",
+        type=str,
+        default=None,
+        help="Path to Coinbase CDP API key JSON file (alternative to --coinbase-api-key/secret)",
+    )
+    parser.add_argument(
         "--state-file",
         type=str,
         default=None,
@@ -126,7 +132,11 @@ async def main():
     args = parse_args()
 
     # ── Fee rate override ──────────────────────────────────────────
-    if args.fee_rate is not None:
+    # In live mode, Coinbase charges real fees on orders — zero out
+    # the arena's simulated fee to avoid double-counting in P&L.
+    if args.trading_mode == "live" and args.fee_rate is None:
+        trading_tools.TRADE_FEE_RATE = 0.0
+    elif args.fee_rate is not None:
         trading_tools.TRADE_FEE_RATE = args.fee_rate
 
     # ── Tax rate override ─────────────────────────────────────────
@@ -161,27 +171,41 @@ async def main():
     trading_tools.TRADING_MODE = args.trading_mode
     if args.trading_mode == "live":
         # Try CLI args first, then fall back to arena_config.json
+        cb_key_file = args.coinbase_key_file
         cb_key = args.coinbase_api_key
         cb_secret = args.coinbase_api_secret
-        if not cb_key or not cb_secret:
+
+        if not cb_key_file and (not cb_key or not cb_secret):
             config_path = _Path(__file__).resolve().parent / "arena_config.json"
             print(f"  Reading credentials from {config_path}...")
             if config_path.exists():
                 import json as _json
                 _cfg = _json.loads(config_path.read_text())
-                cb_key = cb_key or _cfg.get("coinbase", {}).get("api_key", "")
-                cb_secret = cb_secret or _cfg.get("coinbase", {}).get("api_secret", "")
-                if cb_key:
+                cb_cfg = _cfg.get("coinbase", {})
+                # Prefer key_file if specified in config
+                cb_key_file = cb_key_file or cb_cfg.get("key_file", "")
+                if not cb_key_file:
+                    cb_key = cb_key or cb_cfg.get("api_key", "")
+                    cb_secret = cb_secret or cb_cfg.get("api_secret", "")
+                if cb_key_file:
+                    print(f"  CDP key file: {cb_key_file}")
+                elif cb_key:
                     print(f"  API key found: {cb_key[:30]}...")
                 else:
-                    print("  WARNING: No api_key found in arena_config.json")
+                    print("  WARNING: No credentials found in arena_config.json")
             else:
                 print(f"  WARNING: {config_path} not found")
-        if not cb_key or not cb_secret:
+
+        if not cb_key_file and (not cb_key or not cb_secret):
             print("ERROR: Coinbase credentials not found (checked CLI args and arena_config.json)")
+            print("  Provide --coinbase-key-file or --coinbase-api-key/secret")
             return
+
         from coinbase_trader import CoinbaseTrader
-        trader = CoinbaseTrader(cb_key, cb_secret)
+        if cb_key_file:
+            trader = CoinbaseTrader(key_file=cb_key_file)
+        else:
+            trader = CoinbaseTrader(cb_key, cb_secret)
         store.attach_coinbase_trader(trader)
 
         # Fetch real Coinbase USD balance and split across agents
@@ -189,14 +213,15 @@ async def main():
         try:
             balances = trader.get_balances()
             print(f"  All balances: {balances}")
-            # Check for USD or USDC
-            usd_balance = balances.get("USD", 0.0) + balances.get("USDC", 0.0)
+            # Use USD balance only (USDC is a separate crypto asset)
+            usd_balance = balances.get("USD", 0.0)
             if usd_balance > 0:
                 num_agents = max(1, args.num_agents)
                 per_agent = round(usd_balance / num_agents, 2)
                 trading_tools.INITIAL_CASH = per_agent
                 # Update dataclass defaults so new AgentAccounts use the real balance
                 trading_tools.AgentAccount.__dataclass_fields__["cash"].default = per_agent
+                trading_tools.AgentAccount.__dataclass_fields__["initial_cash"].default = per_agent
                 trading_tools.AgentAccount.__dataclass_fields__["peak_value"].default = per_agent
                 print(f"  Coinbase balance: ${usd_balance:,.2f}")
                 print(f"  Per-agent starting cash: ${per_agent:,.2f} ({num_agents} agents)")

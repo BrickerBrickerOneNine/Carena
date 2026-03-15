@@ -209,6 +209,7 @@ __marimo__/
 # Arena environment and config (contain API keys)
 arena.env
 arena_config.json
+coinbase_cdp_key.json
 
 # Data recorder CSV output
 data/

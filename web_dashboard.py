@@ -285,8 +285,9 @@ def _serialize_agents(store, initial_cash: float, tax_rate: float) -> list[dict]
     agents = []
     for agent_id, account in store.accounts.items():
         total_value = account.portfolio_value(price_book)
-        total_pnl = total_value - initial_cash
-        return_pct = (total_pnl / initial_cash * 100) if initial_cash > 0 else 0
+        agent_initial = getattr(account, "initial_cash", initial_cash)
+        total_pnl = total_value - agent_initial
+        return_pct = (total_pnl / agent_initial * 100) if agent_initial > 0 else 0
         estimated_tax = max(0.0, account.total_pnl_realized) * tax_rate
         after_tax_pnl = account.total_pnl_realized - estimated_tax
         total_trades = account.wins + account.losses

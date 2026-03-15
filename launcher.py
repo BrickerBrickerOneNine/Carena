@@ -46,7 +46,7 @@ AVAILABLE_STRATEGIES = ["contrarian", "default", "momentum", "swing"]
 
 DEFAULT_CONFIG = {
     "trading_mode": "simulated",
-    "coinbase": {"api_key": "", "api_secret": ""},
+    "coinbase": {"key_file": "", "api_key": "", "api_secret": ""},
     "llm": {
         "provider": "openai",
         "api_key": "",
@@ -97,10 +97,19 @@ def run_wizard() -> dict:
         console.print(
             "\n  [yellow]WARNING: Live mode places REAL orders on Coinbase![/yellow]"
         )
-        config["coinbase"]["api_key"] = Prompt.ask("  Coinbase CDP API Key Name")
-        config["coinbase"]["api_secret"] = Prompt.ask(
-            "  Coinbase CDP API Secret (EC private key)"
-        )
+        console.print("  [1] Key file (CDP JSON key file from portal.cdp.coinbase.com)")
+        console.print("  [2] Manual (paste API key + secret)")
+        key_method = Prompt.ask("  How to provide credentials?", choices=["1", "2"], default="1")
+        if key_method == "1":
+            config["coinbase"]["key_file"] = Prompt.ask(
+                "  Path to CDP key JSON file",
+                default="coinbase_cdp_key.json",
+            )
+        else:
+            config["coinbase"]["api_key"] = Prompt.ask("  Coinbase API Key ID")
+            config["coinbase"]["api_secret"] = Prompt.ask(
+                "  Coinbase API Secret (base64 or PEM)"
+            )
 
     # Step 2: LLM provider
     console.print("\n[bold]Step 2/5 -- LLM Provider[/bold]")

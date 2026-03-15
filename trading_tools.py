@@ -131,6 +131,7 @@ class LimitOrder:
 @dataclass
 class AgentAccount:
     cash: float = INITIAL_CASH
+    initial_cash: float = INITIAL_CASH  # tracks each agent's actual starting cash for P&L
     positions: dict[str, float] = field(default_factory=dict)
     cost_basis: dict[str, float] = field(default_factory=dict)
     # Weighted-average entry timestamp (Unix epoch) per position
@@ -168,6 +169,7 @@ class AgentAccount:
     def to_dict(self) -> dict:
         return {
             "cash": self.cash,
+            "initial_cash": self.initial_cash,
             "positions": dict(self.positions),
             "cost_basis": dict(self.cost_basis),
             "avg_entry_ts": dict(self.avg_entry_ts),
@@ -187,6 +189,8 @@ class AgentAccount:
     def from_dict(cls, data: dict) -> AgentAccount:
         acct = cls()
         acct.cash = data["cash"]
+        # Fall back to cash value for old checkpoints that don't have initial_cash
+        acct.initial_cash = data.get("initial_cash", data["cash"])
         acct.positions = data.get("positions", {})
         acct.cost_basis = data.get("cost_basis", {})
         acct.avg_entry_ts = data.get("avg_entry_ts", {})
@@ -850,7 +854,7 @@ class PortfolioView:
                     table.add_section()
                 first = False
                 total_value = account.portfolio_value(price_book)
-                total_pnl = total_value - INITIAL_CASH
+                total_pnl = total_value - account.initial_cash
                 # Agent header row with cash and fees
                 table.add_row(
                     agent_id,

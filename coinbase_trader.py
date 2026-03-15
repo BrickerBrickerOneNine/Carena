@@ -10,6 +10,8 @@ designed to be called via ``asyncio.to_thread()`` from the async arena.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -17,6 +19,38 @@ from dataclasses import dataclass
 from coinbase.rest import RESTClient
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_cdp_key(key_data: dict) -> tuple[str, str]:
+    """Convert a CDP portal key (id + raw base64) to SDK-compatible format.
+
+    The CDP portal sometimes provides keys as ``{"id": "...", "privateKey": "<base64>"}``
+    where the privateKey is 64 raw bytes (32-byte EC scalar + 32-byte public key).
+    The SDK expects PEM-encoded EC private keys, so we convert here.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+
+    api_key = key_data.get("name") or key_data.get("id", "")
+    private_key_str = key_data.get("privateKey", "")
+
+    # If already PEM, return as-is
+    if private_key_str.strip().startswith("-----BEGIN"):
+        return api_key, private_key_str
+
+    # Convert raw base64 → PEM
+    raw = base64.b64decode(private_key_str)
+    if len(raw) >= 32:
+        priv_int = int.from_bytes(raw[:32], "big")
+        ec_key = ec.derive_private_key(priv_int, ec.SECP256R1())
+        pem = ec_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        return api_key, pem
+
+    raise ValueError(f"Cannot interpret privateKey ({len(raw)} bytes)")
 
 
 @dataclass
@@ -31,9 +65,35 @@ class OrderResult:
 class CoinbaseTrader:
     """Thin wrapper around the Coinbase Advanced Trade REST API."""
 
-    def __init__(self, api_key: str, api_secret: str) -> None:
-        self._client = RESTClient(api_key=api_key, api_secret=api_secret)
-        logger.info("CoinbaseTrader initialized (live trading enabled)")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        key_file: str | None = None,
+    ) -> None:
+        if key_file:
+            # Load key file and auto-convert if needed
+            with open(key_file) as f:
+                key_data = json.load(f)
+            converted_key, converted_secret = _convert_cdp_key(key_data)
+            self._client = RESTClient(api_key=converted_key, api_secret=converted_secret)
+            logger.info("CoinbaseTrader initialized from key file (live trading enabled)")
+        elif api_key and api_secret:
+            # Try to auto-convert if api_secret is raw base64 (not PEM)
+            if not api_secret.strip().startswith("-----BEGIN"):
+                try:
+                    converted_key, converted_secret = _convert_cdp_key(
+                        {"id": api_key, "privateKey": api_secret}
+                    )
+                    self._client = RESTClient(api_key=converted_key, api_secret=converted_secret)
+                except Exception:
+                    # Fall back to passing as-is
+                    self._client = RESTClient(api_key=api_key, api_secret=api_secret)
+            else:
+                self._client = RESTClient(api_key=api_key, api_secret=api_secret)
+            logger.info("CoinbaseTrader initialized (live trading enabled)")
+        else:
+            raise ValueError("Provide either key_file or api_key+api_secret")
 
     # ── Market orders ─────────────────────────────────────────────
 
@@ -118,23 +178,30 @@ class CoinbaseTrader:
     def get_balances(self) -> dict[str, float]:
         """Fetch available balances from Coinbase. Returns {currency: amount}."""
         try:
-            resp = self._client.get_accounts()
+            resp = self._client.get_accounts(limit=250)
             balances: dict[str, float] = {}
-            # Handle both object-style and dict-style responses
             accounts = getattr(resp, "accounts", None)
             if accounts is None and isinstance(resp, dict):
                 accounts = resp.get("accounts", [])
             if accounts is None:
-                logger.warning("Unexpected get_accounts response: %s", type(resp))
+                logger.warning("Unexpected get_accounts response type: %s", type(resp))
                 return {}
             for account in accounts:
-                if isinstance(account, dict):
-                    currency = account.get("currency", "")
-                    avail = account.get("available_balance", {})
-                    available = float(avail.get("value", "0") if isinstance(avail, dict) else getattr(avail, "value", "0"))
+                currency = (
+                    account.get("currency", "")
+                    if isinstance(account, dict)
+                    else getattr(account, "currency", "")
+                )
+                avail = (
+                    account.get("available_balance", {})
+                    if isinstance(account, dict)
+                    else getattr(account, "available_balance", {})
+                )
+                # available_balance can be a dict or an object — handle both
+                if isinstance(avail, dict):
+                    available = float(avail.get("value", "0"))
                 else:
-                    currency = getattr(account, "currency", "")
-                    available = float(getattr(account.available_balance, "value", "0"))
+                    available = float(getattr(avail, "value", "0"))
                 if available > 0:
                     balances[currency] = balances.get(currency, 0.0) + available
             logger.info("Coinbase balances: %s", balances)
