@@ -298,7 +298,11 @@ class AccountStore:
 
     def get_or_create(self, agent_id: str) -> AgentAccount:
         if agent_id not in self._accounts:
-            self._accounts[agent_id] = AgentAccount()
+            self._accounts[agent_id] = AgentAccount(
+                cash=INITIAL_CASH,
+                initial_cash=INITIAL_CASH,
+                peak_value=INITIAL_CASH,
+            )
         return self._accounts[agent_id]
 
     @property
@@ -321,7 +325,11 @@ class AccountStore:
             return TradeResult(False, f"Agent '{agent_id}' not found.")
         # Cancel any pending orders
         self._pending_orders = [o for o in self._pending_orders if o.agent_id != agent_id]
-        self._accounts[agent_id] = AgentAccount()
+        self._accounts[agent_id] = AgentAccount(
+            cash=INITIAL_CASH,
+            initial_cash=INITIAL_CASH,
+            peak_value=INITIAL_CASH,
+        )
         self.save_checkpoint()
         return TradeResult(True, f"Agent '{agent_id}' reset to ${INITIAL_CASH:,.2f} with no positions.")
 

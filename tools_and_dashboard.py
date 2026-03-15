@@ -219,10 +219,6 @@ async def main():
                 num_agents = max(1, args.num_agents)
                 per_agent = round(usd_balance / num_agents, 2)
                 trading_tools.INITIAL_CASH = per_agent
-                # Update dataclass defaults so new AgentAccounts use the real balance
-                trading_tools.AgentAccount.__dataclass_fields__["cash"].default = per_agent
-                trading_tools.AgentAccount.__dataclass_fields__["initial_cash"].default = per_agent
-                trading_tools.AgentAccount.__dataclass_fields__["peak_value"].default = per_agent
                 print(f"  Coinbase balance: ${usd_balance:,.2f}")
                 print(f"  Per-agent starting cash: ${per_agent:,.2f} ({num_agents} agents)")
             else:
