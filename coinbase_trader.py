@@ -234,6 +234,27 @@ class CoinbaseTrader:
             logger.exception("Failed to fetch Coinbase balances: %s", e)
             return {}
 
+    def get_fee_rates(self) -> tuple[float, float]:
+        """Query Coinbase for actual taker/maker fee rates. Returns (taker, maker)."""
+        try:
+            resp = self._client.get_transaction_summary()
+            fee_tier = (
+                resp.get("fee_tier", {})
+                if isinstance(resp, dict)
+                else getattr(resp, "fee_tier", {})
+            )
+            if isinstance(fee_tier, dict):
+                taker = float(fee_tier.get("taker_fee_rate", "0.012"))
+                maker = float(fee_tier.get("maker_fee_rate", "0.006"))
+            else:
+                taker = float(getattr(fee_tier, "taker_fee_rate", "0.012"))
+                maker = float(getattr(fee_tier, "maker_fee_rate", "0.006"))
+            logger.info("Coinbase fee rates: taker=%.4f, maker=%.4f", taker, maker)
+            return taker, maker
+        except Exception as e:
+            logger.warning("Failed to get fee rates: %s — using defaults", e)
+            return 0.012, 0.006
+
     def get_spot_price(self, product_id: str) -> float | None:
         """Get the current spot (mid) price for a product from Coinbase."""
         try:

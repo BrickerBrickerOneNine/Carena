@@ -112,11 +112,6 @@ def run_wizard() -> dict:
                 "  Coinbase API Secret (base64 or PEM)"
             )
 
-        # Coinbase One subscription (0% trading fees)
-        config["coinbase"]["coinbase_one"] = Confirm.ask(
-            "  Do you have a Coinbase One subscription? (0% trading fees)",
-            default=False,
-        )
 
     # Step 2: LLM provider
     console.print("\n[bold]Step 2/5 -- LLM Provider[/bold]")
@@ -716,8 +711,32 @@ def launch_arena(config: dict) -> int:
     time.sleep(2)
 
     # 4. Agent routers -- one per strategy per coin
+    # Auto-detect Coinbase fee rates for live mode
+    detected_taker: float | None = None
+    detected_maker: float | None = None
+    coinbase_one = False
+    if trading_mode == "live":
+        try:
+            from coinbase_trader import CoinbaseTrader
+            cb_cfg = config.get("coinbase", {})
+            kf = cb_cfg.get("key_file", "")
+            if kf:
+                _trader = CoinbaseTrader(key_file=kf)
+            elif cb_cfg.get("api_key"):
+                _trader = CoinbaseTrader(cb_cfg["api_key"], cb_cfg["api_secret"])
+            else:
+                _trader = None
+            if _trader:
+                detected_taker, detected_maker = _trader.get_fee_rates()
+                coinbase_one = detected_taker == 0.0 and detected_maker == 0.0
+                if coinbase_one:
+                    console.print("  [green]Coinbase One detected (0% fees)[/green]")
+                else:
+                    console.print(f"  Coinbase fees: taker={detected_taker:.2%}, maker={detected_maker:.2%}")
+        except Exception as e:
+            console.print(f"  [yellow]Could not detect fee rates: {e}[/yellow]")
+
     console.print("[bold cyan]Launching Agent Routers...[/bold cyan]")
-    coinbase_one = config.get("coinbase", {}).get("coinbase_one", False)
     for strategy in strategies:
         for coin in coins:
             symbol = coin.split("-")[0].lower()
@@ -733,6 +752,10 @@ def launch_arena(config: dict) -> int:
             ]
             if coinbase_one:
                 router_args.append("--coinbase-one")
+            if detected_taker is not None:
+                router_args.extend(["--taker-fee", str(detected_taker)])
+            if detected_maker is not None:
+                router_args.extend(["--maker-fee", str(detected_maker)])
             _open_terminal(
                 f"Agent {agent_name}",
                 _build_uv_command("deploy_router_node.py", router_args),

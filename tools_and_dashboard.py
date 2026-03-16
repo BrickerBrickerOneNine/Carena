@@ -177,8 +177,6 @@ async def main():
 
     # ── Trading mode ──────────────────────────────────────────────
     trading_tools.TRADING_MODE = args.trading_mode
-    if args.coinbase_one:
-        trading_tools.COINBASE_ONE = True
     if args.trading_mode == "live":
         # Try CLI args first, then fall back to arena_config.json
         cb_key_file = args.coinbase_key_file
@@ -217,6 +215,19 @@ async def main():
         else:
             trader = CoinbaseTrader(cb_key, cb_secret)
         store.attach_coinbase_trader(trader)
+
+        # Auto-detect fee rates from Coinbase
+        print("\nDetecting Coinbase fee tier...")
+        taker_fee, maker_fee = trader.get_fee_rates()
+        trading_tools.COINBASE_TAKER_FEE = taker_fee
+        trading_tools.COINBASE_MAKER_FEE = maker_fee
+        if taker_fee == 0.0 and maker_fee == 0.0:
+            trading_tools.COINBASE_ONE = True
+            print("  Coinbase One detected (0% fees)")
+        else:
+            trading_tools.COINBASE_ONE = False
+            print(f"  Taker fee: {taker_fee:.2%} (market orders)")
+            print(f"  Maker fee: {maker_fee:.2%} (limit orders)")
 
         # Sync agent accounts from real Coinbase balances (USD + crypto)
         print("\nSyncing agent accounts from Coinbase...")

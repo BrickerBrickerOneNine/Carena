@@ -116,21 +116,27 @@ def _build_trading_context(
     trading_mode: str = "simulated",
     coinbase_one: bool = False,
     cash_reserve_pct: int = 30,
+    taker_fee: float | None = None,
+    maker_fee: float | None = None,
 ) -> str:
     """Build the trading context string, optionally focused on a single product."""
     products_str = product if product else ", ".join(DEFAULT_PRODUCTS)
 
-    if trading_mode == "live" and coinbase_one:
+    # Use actual fee rates if provided, otherwise fall back to defaults
+    actual_taker = taker_fee if taker_fee is not None else COINBASE_TAKER_FEE
+    actual_maker = maker_fee if maker_fee is not None else COINBASE_MAKER_FEE
+
+    if trading_mode == "live" and actual_taker == 0.0 and actual_maker == 0.0:
         ctx = _LIVE_TRADING_CONTEXT_COINBASE_ONE.format(products=products_str)
     elif trading_mode == "live":
         ctx = _LIVE_TRADING_CONTEXT_STANDARD.format(
             products=products_str,
-            taker_pct=f"{COINBASE_TAKER_FEE:.1%}",
-            taker_rt_pct=f"{2 * COINBASE_TAKER_FEE:.1%}",
-            maker_pct=f"{COINBASE_MAKER_FEE:.1%}",
-            maker_rt_pct=f"{2 * COINBASE_MAKER_FEE:.1%}",
-            fee_savings_pct=f"{COINBASE_TAKER_FEE - COINBASE_MAKER_FEE:.1%}",
-            fee_savings_rt_pct=f"{2 * (COINBASE_TAKER_FEE - COINBASE_MAKER_FEE):.1%}",
+            taker_pct=f"{actual_taker:.1%}",
+            taker_rt_pct=f"{2 * actual_taker:.1%}",
+            maker_pct=f"{actual_maker:.1%}",
+            maker_rt_pct=f"{2 * actual_maker:.1%}",
+            fee_savings_pct=f"{actual_taker - actual_maker:.1%}",
+            fee_savings_rt_pct=f"{2 * (actual_taker - actual_maker):.1%}",
         )
     else:
         ctx = _TRADING_CONTEXT.format(
@@ -321,6 +327,18 @@ def parse_args() -> argparse.Namespace:
         default=30,
         help="Minimum percentage of portfolio to keep in cash (default: 30)",
     )
+    parser.add_argument(
+        "--taker-fee",
+        type=float,
+        default=None,
+        help="Actual taker fee rate (auto-detected from Coinbase if not set)",
+    )
+    parser.add_argument(
+        "--maker-fee",
+        type=float,
+        default=None,
+        help="Actual maker fee rate (auto-detected from Coinbase if not set)",
+    )
     return parser.parse_args()
 
 
@@ -339,6 +357,8 @@ async def main() -> None:
         trading_mode=args.trading_mode,
         coinbase_one=args.coinbase_one,
         cash_reserve_pct=args.cash_reserve_pct,
+        taker_fee=args.taker_fee,
+        maker_fee=args.maker_fee,
     )
     system_prompt = (
         _STRATEGY_BASES[args.strategy]
