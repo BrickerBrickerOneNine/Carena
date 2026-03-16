@@ -60,6 +60,8 @@ class OrderResult:
     message: str
     filled_price: float | None = None
     filled_qty: float | None = None
+    filled_fees: float | None = None
+    filled_quote_size: float | None = None  # total USD spent (buys) or received (sells)
 
 
 class CoinbaseTrader:
@@ -105,7 +107,10 @@ class CoinbaseTrader:
                 product_id=product_id,
                 quote_size=str(round(quote_size, 2)),
             )
-            return self._parse_order_response(resp, "buy", product_id)
+            result = self._parse_order_response(resp, "buy", product_id)
+            if result.success and result.order_id:
+                self._enrich_with_fills(result)
+            return result
         except Exception as e:
             logger.exception("Market buy failed for %s", product_id)
             return OrderResult(False, None, f"Coinbase market buy failed: {e}")
@@ -118,7 +123,10 @@ class CoinbaseTrader:
                 product_id=product_id,
                 base_size=str(base_size),
             )
-            return self._parse_order_response(resp, "sell", product_id)
+            result = self._parse_order_response(resp, "sell", product_id)
+            if result.success and result.order_id:
+                self._enrich_with_fills(result)
+            return result
         except Exception as e:
             logger.exception("Market sell failed for %s", product_id)
             return OrderResult(False, None, f"Coinbase market sell failed: {e}")
@@ -211,6 +219,66 @@ class CoinbaseTrader:
             return {}
 
     # ── Helpers ───────────────────────────────────────────────────
+
+    def _enrich_with_fills(self, result: OrderResult) -> None:
+        """Query Coinbase for actual fill details and update the OrderResult.
+
+        Market orders fill nearly instantly, but we retry briefly in case
+        of propagation delay.
+        """
+        import time as _time
+
+        order_id = result.order_id
+        for attempt in range(5):
+            try:
+                fills_resp = self._client.get_fills(order_ids=[order_id])
+                fills = getattr(fills_resp, "fills", None)
+                if fills is None and isinstance(fills_resp, dict):
+                    fills = fills_resp.get("fills", [])
+                if not fills:
+                    _time.sleep(0.5)
+                    continue
+
+                total_qty = 0.0
+                total_quote = 0.0
+                total_fees = 0.0
+                for fill in fills:
+                    if isinstance(fill, dict):
+                        price = float(fill.get("price", 0))
+                        size = float(fill.get("size", 0))
+                        commission = float(fill.get("commission", 0))
+                        size_in_quote = fill.get("size_in_quote", False)
+                    else:
+                        price = float(getattr(fill, "price", 0))
+                        size = float(getattr(fill, "size", 0))
+                        commission = float(getattr(fill, "commission", 0))
+                        size_in_quote = getattr(fill, "size_in_quote", False)
+
+                    total_fees += commission
+                    if size_in_quote:
+                        # size is in USD — derive base qty
+                        total_quote += size
+                        total_qty += size / price if price > 0 else 0
+                    else:
+                        total_qty += size
+                        total_quote += size * price
+
+                avg_price = total_quote / total_qty if total_qty > 0 else 0
+                result.filled_price = round(avg_price, 6)
+                result.filled_qty = round(total_qty, 8)
+                result.filled_fees = round(total_fees, 6)
+                result.filled_quote_size = round(total_quote, 6)
+                logger.info(
+                    "Order %s filled: qty=%s, avg_price=$%s, fees=$%s, quote=$%s",
+                    order_id, result.filled_qty, result.filled_price,
+                    result.filled_fees, result.filled_quote_size,
+                )
+                return
+            except Exception as e:
+                logger.warning("Failed to get fills for %s (attempt %d): %s", order_id, attempt, e)
+                _time.sleep(0.5)
+
+        logger.warning("Could not get fill details for order %s after retries", order_id)
 
     def _parse_order_response(
         self, resp: object, action: str, product_id: str

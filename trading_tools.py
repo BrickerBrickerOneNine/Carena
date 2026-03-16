@@ -428,13 +428,20 @@ class AccountStore:
                     f"Insufficient cash. Need ${total_cost:,.2f} (incl ${fee:,.2f} fee) "
                     f"but only have ${account.cash:,.2f}.",
                 )
-            # Live trading: place real order on Coinbase before updating local state
+            # Live trading: place real order on Coinbase, then use actual fill data
             if TRADING_MODE == "live" and self._coinbase_trader is not None:
                 from coinbase_trader import CoinbaseTrader
                 trader: CoinbaseTrader = self._coinbase_trader  # type: ignore[assignment]
                 result = trader.market_buy(product_id, cost)
                 if not result.success:
                     return TradeResult(False, f"[LIVE] {result.message}")
+                # Override with real fill data from Coinbase
+                if result.filled_price is not None:
+                    price = result.filled_price
+                    quantity = result.filled_qty or quantity
+                    fee = result.filled_fees or 0.0
+                    cost = result.filled_quote_size or (price * quantity)
+                    total_cost = cost + fee
             account.cash -= total_cost
             account.total_fees += fee
             existing_qty = account.positions.get(product_id, 0)
@@ -480,16 +487,25 @@ class AccountStore:
                         f"(or position must be down >{STOP_LOSS_OVERRIDE_PCT}% for emergency exit).",
                     )
 
-        # Live trading: place real order on Coinbase before updating local state
+        # Live trading: place real order on Coinbase, then use actual fill data
         if TRADING_MODE == "live" and self._coinbase_trader is not None:
             from coinbase_trader import CoinbaseTrader
             trader: CoinbaseTrader = self._coinbase_trader  # type: ignore[assignment]
             result = trader.market_sell(product_id, quantity)
             if not result.success:
                 return TradeResult(False, f"[LIVE] {result.message}")
+            # Override with real fill data from Coinbase
+            if result.filled_price is not None:
+                price = result.filled_price
+                quantity = result.filled_qty or quantity
+                fee = result.filled_fees or 0.0
+            else:
+                fee = 0.0  # live mode — don't fabricate fees
+
+        if TRADING_MODE != "live":
+            fee = price * quantity * TRADE_FEE_RATE
 
         gross_proceeds = price * quantity
-        fee = gross_proceeds * TRADE_FEE_RATE
         net_proceeds = gross_proceeds - fee
         # Track realized P&L for this sell
         avg_cost = account.avg_cost_per_unit(product_id)
@@ -508,10 +524,10 @@ class AccountStore:
         account.cost_basis[product_id] = account.cost_basis.get(product_id, 0.0) - (
             avg_cost * quantity
         )
-        new_qty = round(held - quantity, 1)
-        if new_qty <= 0:
-            del account.positions[product_id]
-            del account.cost_basis[product_id]
+        new_qty = round(held - quantity, 8)
+        if new_qty <= 1e-9:
+            account.positions.pop(product_id, None)
+            account.cost_basis.pop(product_id, None)
             account.avg_entry_ts.pop(product_id, None)
             account.last_buy_ts.pop(product_id, None)
         else:
