@@ -383,21 +383,22 @@ class AccountStore:
 
         account = self.get_or_create(agent_id)
 
-        # USD cash — use available only (held USD is in open orders)
-        usd = avail_balances.pop("USD", 0.0)
+        # USD + stablecoins as cash — Coinbase shows these combined as "cash balance"
+        _cash_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
+        usd = sum(avail_balances.get(c, 0.0) for c in _cash_currencies)
         per_agent_usd = round(usd / max(1, num_agents), 2)
         account.cash = per_agent_usd
         account.initial_cash = per_agent_usd
         account.peak_value = per_agent_usd
 
         # Crypto positions — map to Coinbase product IDs (e.g. ETH -> ETH-USD)
-        # Skip fiat and stablecoins (already counted as cash or dust)
+        # Skip fiat and stablecoins (already counted as cash above)
         # Query spot prices from Coinbase so initial_cash includes crypto value
         account.positions.clear()
         account.cost_basis.clear()
         synced_positions = []
         crypto_value = 0.0
-        skip_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
+        skip_currencies = _cash_currencies
         for currency, qty in balances.items():
             if qty <= 0 or currency in skip_currencies:
                 continue
@@ -457,14 +458,15 @@ class AccountStore:
         if account is None:
             return f"Agent '{agent_id}' not found — skipping resync."
 
-        # ── Cash ──────────────────────────────────────────────────
-        usd = avail_balances.pop("USD", 0.0)
+        # ── Cash (USD + stablecoins) ─────────────────────────────
+        _cash_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
+        usd = sum(avail_balances.get(c, 0.0) for c in _cash_currencies)
         new_cash = round(usd / max(1, num_agents), 2)
         cash_delta = new_cash - account.cash
         account.cash = new_cash
 
         # ── Positions ─────────────────────────────────────────────
-        skip_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
+        skip_currencies = _cash_currencies
         position_deltas: list[str] = []
 
         # Build set of real positions from Coinbase
