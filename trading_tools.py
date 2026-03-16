@@ -409,8 +409,8 @@ class AccountStore:
             if spot is not None:
                 position_value = qty * spot
                 crypto_value += position_value
-                # Set cost basis to current price (P&L starts at 0)
-                account.cost_basis[product_id] = spot
+                # Set cost basis to total cost (qty * price), not per-unit
+                account.cost_basis[product_id] = position_value
                 synced_positions.append(f"{qty:.6f} {currency} @ ${spot:,.2f} = ${position_value:,.2f}")
             else:
                 account.cost_basis[product_id] = 0.0
