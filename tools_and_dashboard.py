@@ -119,6 +119,11 @@ def parse_args():
         default=0,
         help="Port for web dashboard (0 to disable, default: 0)",
     )
+    parser.add_argument(
+        "--coinbase-one",
+        action="store_true",
+        help="Enable Coinbase One fee tier (0%% trading fees)",
+    )
     return parser.parse_args()
 
 
@@ -169,6 +174,8 @@ async def main():
 
     # ── Trading mode ──────────────────────────────────────────────
     trading_tools.TRADING_MODE = args.trading_mode
+    if args.coinbase_one:
+        trading_tools.COINBASE_ONE = True
     if args.trading_mode == "live":
         # Try CLI args first, then fall back to arena_config.json
         cb_key_file = args.coinbase_key_file

@@ -45,8 +45,13 @@ logger = logging.getLogger(__name__)
 # ── Configuration ────────────────────────────────────────────────
 
 INITIAL_CASH = 1_000.0
-TRADE_FEE_RATE = float(os.getenv("TRADE_FEE_RATE", "0.05"))  # 5% default
+TRADE_FEE_RATE = float(os.getenv("TRADE_FEE_RATE", "0.05"))  # 5% default (simulated mode)
 TAX_RATE = float(os.getenv("TAX_RATE", "0.30"))  # 30% combined federal + state short-term cap gains
+
+# Coinbase Advanced Trade fee schedule
+COINBASE_TAKER_FEE = 0.012   # 1.2% — market orders
+COINBASE_MAKER_FEE = 0.004   # 0.4% — limit orders
+COINBASE_ONE: bool = False    # Set True at startup if user has Coinbase One (0% fees)
 
 MAX_BALANCE_HISTORY = 300  # ~25 min at 5s intervals
 
@@ -420,7 +425,12 @@ class AccountStore:
         if action == "buy":
             price = float(entry["best_ask"])
             cost = price * quantity
-            fee = cost * TRADE_FEE_RATE
+            # In live mode, use Coinbase fee for cash check (real fee comes from fills)
+            if TRADING_MODE == "live":
+                fee_rate = 0.0 if COINBASE_ONE else COINBASE_TAKER_FEE
+            else:
+                fee_rate = TRADE_FEE_RATE
+            fee = cost * fee_rate
             total_cost = cost + fee
             if total_cost > account.cash:
                 return TradeResult(
@@ -658,6 +668,10 @@ class AccountStore:
 
     def check_and_fill_orders(self) -> list[str]:
         """Check all pending limit orders against current prices. Returns list of fill messages."""
+        # In live mode, Coinbase handles limit order fills on the exchange.
+        # Don't also fire local market orders — that would double-execute.
+        if TRADING_MODE == "live":
+            return []
         filled: list[str] = []
         remaining: list[LimitOrder] = []
         for order in self._pending_orders:

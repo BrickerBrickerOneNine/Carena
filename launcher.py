@@ -46,7 +46,7 @@ AVAILABLE_STRATEGIES = ["contrarian", "default", "momentum", "swing"]
 
 DEFAULT_CONFIG = {
     "trading_mode": "simulated",
-    "coinbase": {"key_file": "", "api_key": "", "api_secret": ""},
+    "coinbase": {"key_file": "", "api_key": "", "api_secret": "", "coinbase_one": False},
     "llm": {
         "provider": "openai",
         "api_key": "",
@@ -110,6 +110,12 @@ def run_wizard() -> dict:
             config["coinbase"]["api_secret"] = Prompt.ask(
                 "  Coinbase API Secret (base64 or PEM)"
             )
+
+        # Coinbase One subscription (0% trading fees)
+        config["coinbase"]["coinbase_one"] = Confirm.ask(
+            "  Do you have a Coinbase One subscription? (0% trading fees)",
+            default=False,
+        )
 
     # Step 2: LLM provider
     console.print("\n[bold]Step 2/5 -- LLM Provider[/bold]")
@@ -196,8 +202,9 @@ def run_wizard() -> dict:
 
     # Step 5: Advanced settings
     console.print("\n[bold]Step 5/5 -- Advanced Settings[/bold]")
+    default_interval = 60 if config["trading_mode"] == "live" else 300
     config["market_interval"] = IntPrompt.ask(
-        "  Market data interval (seconds)", default=300
+        "  Market data interval (seconds)", default=default_interval
     )
     fee_str = Prompt.ask("  Fee rate (decimal, e.g. 0.05)", default="0.05")
     try:
@@ -666,6 +673,8 @@ def launch_arena(config: dict) -> int:
     ]
     # Note: in live mode, credentials are read from arena_config.json
     # directly by tools_and_dashboard.py (avoids shell escaping issues)
+    if config.get("coinbase", {}).get("coinbase_one", False):
+        tools_args.append("--coinbase-one")
     _open_terminal(
         "Tools and Dashboard",
         _build_uv_command("tools_and_dashboard.py", tools_args),
@@ -694,19 +703,24 @@ def launch_arena(config: dict) -> int:
 
     # 4. Agent routers -- one per strategy per coin
     console.print("[bold cyan]Launching Agent Routers...[/bold cyan]")
+    coinbase_one = config.get("coinbase", {}).get("coinbase_one", False)
     for strategy in strategies:
         for coin in coins:
             symbol = coin.split("-")[0].lower()
             agent_name = f"{strategy}-{symbol}"
+            router_args = [
+                "--name", agent_name,
+                "--chat-node-name", "arena-node",
+                "--strategy", strategy,
+                "--product", coin,
+                "--bootstrap-servers", bootstrap,
+                "--trading-mode", trading_mode,
+            ]
+            if coinbase_one:
+                router_args.append("--coinbase-one")
             _open_terminal(
                 f"Agent {agent_name}",
-                _build_uv_command("deploy_router_node.py", [
-                    "--name", agent_name,
-                    "--chat-node-name", "arena-node",
-                    "--strategy", strategy,
-                    "--product", coin,
-                    "--bootstrap-servers", bootstrap,
-                ]),
+                _build_uv_command("deploy_router_node.py", router_args),
             )
             count += 1
 

@@ -26,6 +26,8 @@ from calfkit.runners.service import NodesService
 from calfkit.stores.in_memory import InMemoryMessageHistoryStore
 from coinbase_consumer import DEFAULT_PRODUCTS
 from trading_tools import (
+    COINBASE_MAKER_FEE,
+    COINBASE_TAKER_FEE,
     TRADE_FEE_RATE,
     calculator,
     cancel_limit_order,
@@ -48,6 +50,37 @@ _TRADING_CONTEXT = (
     "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
     "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it to cut losses.\n"
     "- New indicators available: VWAP (volume-weighted price), OBV trend (volume confirms direction), RSI divergence."
+)
+
+_LIVE_TRADING_CONTEXT_STANDARD = (
+    "\n\nTrading context (LIVE — real Coinbase orders):\n"
+    "- Available products: {products}\n"
+    "- THIS IS REAL MONEY. Every trade costs real fees and affects your real Coinbase balance.\n"
+    "- Market order fee: {taker_pct} per trade (taker). A round-trip with market orders costs ~{taker_rt_pct}.\n"
+    "- Limit order fee: {maker_pct} per trade (maker). A round-trip with limit orders costs ~{maker_rt_pct}.\n"
+    "- PREFER LIMIT ORDERS. They save {fee_savings_pct} per trade vs market orders ({fee_savings_rt_pct} per round-trip).\n"
+    "  Place limit orders at support/resistance levels and let them fill. Use market orders ONLY for urgent stop-losses.\n"
+    "- Your edge must exceed ~{taker_rt_pct} (market) or ~{maker_rt_pct} (limit) in fees + spread to justify a trade.\n"
+    "- Buys execute at the best ask, sells at the best bid.\n"
+    "- Fractional trading is supported (up to 6 decimal places).\n"
+    "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
+    "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it.\n"
+    "- Indicators: VWAP, OBV trend, RSI divergence, SMA, Bollinger Bands, momentum.\n"
+    "- PATIENCE IS PROFIT. Fewer, higher-conviction trades beat frequent small trades."
+)
+
+_LIVE_TRADING_CONTEXT_COINBASE_ONE = (
+    "\n\nTrading context (LIVE — Coinbase One, 0% fees):\n"
+    "- Available products: {products}\n"
+    "- THIS IS REAL MONEY. Every trade affects your real Coinbase balance.\n"
+    "- Trading fees: 0% (Coinbase One subscription). You can trade without fee drag.\n"
+    "- You still lose the bid-ask spread on every round-trip, so only trade when confident.\n"
+    "- Buys execute at the best ask, sells at the best bid.\n"
+    "- Fractional trading is supported (up to 6 decimal places).\n"
+    "- You can use limit orders (place_limit_order) or market orders (execute_trade) freely.\n"
+    "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
+    "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it.\n"
+    "- Indicators: VWAP, OBV trend, RSI divergence, SMA, Bollinger Bands, momentum."
 )
 
 _ANTI_PATTERNS = (
@@ -75,14 +108,33 @@ _SINGLE_PRODUCT_FOCUS = (
 )
 
 
-def _build_trading_context(product: str | None = None) -> str:
+def _build_trading_context(
+    product: str | None = None,
+    trading_mode: str = "simulated",
+    coinbase_one: bool = False,
+) -> str:
     """Build the trading context string, optionally focused on a single product."""
     products_str = product if product else ", ".join(DEFAULT_PRODUCTS)
-    ctx = _TRADING_CONTEXT.format(
-        products=products_str,
-        fee_pct=f"{TRADE_FEE_RATE:.1%}",
-        roundtrip_pct=f"{2 * TRADE_FEE_RATE:.1%}",
-    )
+
+    if trading_mode == "live" and coinbase_one:
+        ctx = _LIVE_TRADING_CONTEXT_COINBASE_ONE.format(products=products_str)
+    elif trading_mode == "live":
+        ctx = _LIVE_TRADING_CONTEXT_STANDARD.format(
+            products=products_str,
+            taker_pct=f"{COINBASE_TAKER_FEE:.1%}",
+            taker_rt_pct=f"{2 * COINBASE_TAKER_FEE:.1%}",
+            maker_pct=f"{COINBASE_MAKER_FEE:.1%}",
+            maker_rt_pct=f"{2 * COINBASE_MAKER_FEE:.1%}",
+            fee_savings_pct=f"{COINBASE_TAKER_FEE - COINBASE_MAKER_FEE:.1%}",
+            fee_savings_rt_pct=f"{2 * (COINBASE_TAKER_FEE - COINBASE_MAKER_FEE):.1%}",
+        )
+    else:
+        ctx = _TRADING_CONTEXT.format(
+            products=products_str,
+            fee_pct=f"{TRADE_FEE_RATE:.1%}",
+            roundtrip_pct=f"{2 * TRADE_FEE_RATE:.1%}",
+        )
+
     if product:
         ctx += _SINGLE_PRODUCT_FOCUS.format(product=product)
     return ctx
@@ -224,6 +276,17 @@ def parse_args() -> argparse.Namespace:
         help="Single product to trade (e.g. BTC-USD). "
         "Agent will ignore all other products. Omit for multi-product mode.",
     )
+    parser.add_argument(
+        "--trading-mode",
+        choices=["simulated", "live"],
+        default="simulated",
+        help="Trading mode: affects fee info shown to agent in system prompt",
+    )
+    parser.add_argument(
+        "--coinbase-one",
+        action="store_true",
+        help="Enable Coinbase One (0%% fees) in the agent's trading context",
+    )
     return parser.parse_args()
 
 
@@ -235,17 +298,19 @@ async def main() -> None:
         print(f"Available: {', '.join(_STRATEGY_BASES.keys())}")
         sys.exit(1)
 
-    # If --product is set, build a single-product-focused prompt
-    if args.product:
-        product = args.product.upper().strip()
-        system_prompt = (
-            _STRATEGY_BASES[args.strategy]
-            + _build_trading_context(product)
-            + _ANTI_PATTERNS
-            + _REASONING_ADDENDUM
-        )
-    else:
-        system_prompt = STRATEGIES[args.strategy]
+    # Build system prompt with correct fee context for trading mode
+    product = args.product.upper().strip() if args.product else None
+    trading_ctx = _build_trading_context(
+        product=product,
+        trading_mode=args.trading_mode,
+        coinbase_one=args.coinbase_one,
+    )
+    system_prompt = (
+        _STRATEGY_BASES[args.strategy]
+        + trading_ctx
+        + _ANTI_PATTERNS
+        + _REASONING_ADDENDUM
+    )
 
     print("=" * 50)
     print(f"Router Node Deployment: {args.name}")
