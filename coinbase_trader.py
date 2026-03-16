@@ -183,8 +183,13 @@ class CoinbaseTrader:
 
     # ── Account info ──────────────────────────────────────────────
 
-    def get_balances(self) -> dict[str, float]:
-        """Fetch available balances from Coinbase. Returns {currency: amount}."""
+    def get_balances(self, include_holds: bool = True) -> dict[str, float]:
+        """Fetch balances from Coinbase. Returns {currency: amount}.
+
+        By default includes both available and held (in-order) amounts,
+        which matches what users see on the Coinbase website.
+        Set include_holds=False to get only available (tradeable) balances.
+        """
         try:
             resp = self._client.get_accounts(limit=250)
             balances: dict[str, float] = {}
@@ -205,14 +210,25 @@ class CoinbaseTrader:
                     if isinstance(account, dict)
                     else getattr(account, "available_balance", {})
                 )
-                # available_balance can be a dict or an object — handle both
+                hold = (
+                    account.get("hold", {})
+                    if isinstance(account, dict)
+                    else getattr(account, "hold", {})
+                )
+                # available_balance and hold can be a dict or an object
                 if isinstance(avail, dict):
                     available = float(avail.get("value", "0"))
                 else:
                     available = float(getattr(avail, "value", "0"))
-                if available > 0:
-                    balances[currency] = balances.get(currency, 0.0) + available
-            logger.info("Coinbase balances: %s", balances)
+                if isinstance(hold, dict):
+                    held = float(hold.get("value", "0"))
+                else:
+                    held = float(getattr(hold, "value", "0"))
+
+                total = available + held if include_holds else available
+                if total > 0:
+                    balances[currency] = balances.get(currency, 0.0) + total
+            logger.info("Coinbase balances (holds=%s): %s", include_holds, balances)
             return balances
         except Exception as e:
             logger.exception("Failed to fetch Coinbase balances: %s", e)

@@ -376,25 +376,30 @@ class AccountStore:
         if self._coinbase_trader is None:
             return "No Coinbase trader attached — cannot sync."
 
-        balances = self._coinbase_trader.get_balances()
+        # Get total balances (available + held) for crypto positions
+        balances = self._coinbase_trader.get_balances(include_holds=True)
         if not balances:
             return "Failed to fetch Coinbase balances."
+        # Get available-only USD for cash (held USD is locked in open orders)
+        avail_balances = self._coinbase_trader.get_balances(include_holds=False)
 
         account = self.get_or_create(agent_id)
 
-        # USD cash (split across agents)
-        usd = balances.pop("USD", 0.0)
+        # USD cash — use available only (held USD is in open orders)
+        usd = avail_balances.pop("USD", 0.0)
         per_agent_usd = round(usd / max(1, num_agents), 2)
         account.cash = per_agent_usd
         account.initial_cash = per_agent_usd
         account.peak_value = per_agent_usd
 
         # Crypto positions — map to Coinbase product IDs (e.g. ETH -> ETH-USD)
+        # Skip fiat and stablecoins (already counted as cash or dust)
         account.positions.clear()
         account.cost_basis.clear()
         synced_positions = []
+        skip_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
         for currency, qty in balances.items():
-            if qty <= 0:
+            if qty <= 0 or currency in skip_currencies:
                 continue
             product_id = f"{currency}-USD"
             account.positions[product_id] = qty
