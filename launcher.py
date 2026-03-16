@@ -198,7 +198,7 @@ def run_wizard() -> dict:
 
     # Step 5: Advanced settings
     console.print("\n[bold]Step 5/5 -- Advanced Settings[/bold]")
-    default_interval = 60 if config["trading_mode"] == "live" else 300
+    default_interval = 300
     config["market_interval"] = IntPrompt.ask(
         "  Market data interval (seconds)", default=default_interval
     )

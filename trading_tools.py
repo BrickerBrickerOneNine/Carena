@@ -58,9 +58,9 @@ MAX_BALANCE_HISTORY = 300  # ~25 min at 5s intervals
 TRADING_MODE: str = os.getenv("TRADING_MODE", "simulated")  # "simulated" or "live"
 
 # ── Trade guardrails ─────────────────────────────────────────────
-MIN_HOLD_SECONDS = 120  # 2 min minimum hold (unless stop-loss)
-MAX_TRADES_PER_HOUR = 10  # rolling 1-hour window
-STOP_LOSS_OVERRIDE_PCT = 1.5  # loss % that overrides min hold time
+MIN_HOLD_SECONDS = 600  # 10 min minimum hold (unless stop-loss)
+MAX_TRADES_PER_HOUR = 4  # rolling 1-hour window
+STOP_LOSS_OVERRIDE_PCT = 2.0  # loss % that overrides min hold time
 
 AGENT_COLORS: dict[str, str] = {
     "momentum": "cyan",
