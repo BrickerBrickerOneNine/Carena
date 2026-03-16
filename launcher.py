@@ -252,6 +252,8 @@ def _print_config_summary(config: dict) -> None:
     table.add_row("Total Agents", str(len(config["coins"]) * len(strategies)))
     table.add_row("Market Interval", f"{config['market_interval']}s")
     table.add_row("Fee Rate", f"{config['fee_rate']:.4%}")
+    cash_pct = config.get("cash_reserve_pct", 30)
+    table.add_row("Cash Reserve", f"{cash_pct}%" if cash_pct > 0 else "Disabled")
     web_port = config.get("web_port", 8080)
     table.add_row("Web Dashboard", f"http://localhost:{web_port}" if web_port else "Disabled")
 
@@ -271,7 +273,7 @@ def _edit_config(config: dict) -> dict:
     console.print("  [2] Strategies (currently: {})".format(", ".join(strategies)))
     console.print("  [3] Trading mode (currently: {})".format(config["trading_mode"]))
     console.print("  [4] LLM provider / API key")
-    console.print("  [5] Advanced settings (fee rate, interval)")
+    console.print("  [5] Advanced settings (fee rate, interval, cash reserve)")
     console.print()
 
     choices = Prompt.ask(
@@ -394,6 +396,10 @@ def _edit_config(config: dict) -> dict:
             config["fee_rate"] = float(fee_str)
         except ValueError:
             pass
+        config["cash_reserve_pct"] = IntPrompt.ask(
+            "  Cash reserve (% of portfolio to keep in cash, 0 to disable)",
+            default=config.get("cash_reserve_pct", 30),
+        )
 
     # Save and show updated config
     save_config(config, str(CONFIG_FILE))
