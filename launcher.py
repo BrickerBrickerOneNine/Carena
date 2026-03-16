@@ -46,7 +46,7 @@ AVAILABLE_STRATEGIES = ["contrarian", "default", "momentum", "swing"]
 
 DEFAULT_CONFIG = {
     "trading_mode": "simulated",
-    "coinbase": {"key_file": "", "api_key": "", "api_secret": "", "coinbase_one": False},
+    "coinbase": {"key_file": "", "api_key": "", "api_secret": ""},
     "llm": {
         "provider": "openai",
         "api_key": "",
@@ -682,8 +682,6 @@ def launch_arena(config: dict) -> int:
     ]
     # Note: in live mode, credentials are read from arena_config.json
     # directly by tools_and_dashboard.py (avoids shell escaping issues)
-    if config.get("coinbase", {}).get("coinbase_one", False):
-        tools_args.append("--coinbase-one")
     _open_terminal(
         "Tools and Dashboard",
         _build_uv_command("tools_and_dashboard.py", tools_args),
@@ -714,7 +712,6 @@ def launch_arena(config: dict) -> int:
     # Auto-detect Coinbase fee rates for live mode
     detected_taker: float | None = None
     detected_maker: float | None = None
-    coinbase_one = False
     if trading_mode == "live":
         try:
             from coinbase_trader import CoinbaseTrader
@@ -728,11 +725,7 @@ def launch_arena(config: dict) -> int:
                 _trader = None
             if _trader:
                 detected_taker, detected_maker = _trader.get_fee_rates()
-                coinbase_one = detected_taker == 0.0 and detected_maker == 0.0
-                if coinbase_one:
-                    console.print("  [green]Coinbase One detected (0% fees)[/green]")
-                else:
-                    console.print(f"  Coinbase fees: taker={detected_taker:.2%}, maker={detected_maker:.2%}")
+                console.print(f"  Coinbase fees: taker={detected_taker:.2%}, maker={detected_maker:.2%}")
         except Exception as e:
             console.print(f"  [yellow]Could not detect fee rates: {e}[/yellow]")
 
@@ -750,8 +743,6 @@ def launch_arena(config: dict) -> int:
                 "--trading-mode", trading_mode,
                 "--cash-reserve-pct", str(config.get("cash_reserve_pct", 30)),
             ]
-            if coinbase_one:
-                router_args.append("--coinbase-one")
             if detected_taker is not None:
                 router_args.extend(["--taker-fee", str(detected_taker)])
             if detected_maker is not None:

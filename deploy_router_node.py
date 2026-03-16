@@ -71,21 +71,6 @@ _LIVE_TRADING_CONTEXT_STANDARD = (
     "- PATIENCE IS PROFIT. Fewer, higher-conviction trades beat frequent small trades."
 )
 
-_LIVE_TRADING_CONTEXT_COINBASE_ONE = (
-    "\n\nTrading context (LIVE — Coinbase One, 0% fees):\n"
-    "- Available products: {products}\n"
-    "- THIS IS REAL MONEY. Every trade affects your real Coinbase balance.\n"
-    "- Trading fees: 0% (Coinbase One subscription). You can trade without fee drag.\n"
-    "- You still lose the bid-ask spread on every round-trip, so only trade when confident.\n"
-    "- Buys execute at the best ask, sells at the best bid.\n"
-    "- Fractional trading is supported (up to 6 decimal places).\n"
-    "- You can use limit orders (place_limit_order) or market orders (execute_trade) freely.\n"
-    "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
-    "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it.\n"
-    "- Indicators at ALL timeframes (1-min through 1-day): SMA, RSI, Bollinger Bands, momentum, VWAP, OBV trend, RSI divergence.\n"
-    "- You have 30 DAYS of daily candles and 7 DAYS of 6-hour candles. ALWAYS check the macro trend before trading."
-)
-
 _ANTI_PATTERNS = (
     "\n\nAnti-patterns — NEVER do these:\n"
     "- NEVER buy into a falling knife: if the indicators show 3+ consecutive red candles, wait for a green candle before buying.\n"
@@ -114,7 +99,6 @@ _SINGLE_PRODUCT_FOCUS = (
 def _build_trading_context(
     product: str | None = None,
     trading_mode: str = "simulated",
-    coinbase_one: bool = False,
     cash_reserve_pct: int = 30,
     taker_fee: float | None = None,
     maker_fee: float | None = None,
@@ -126,9 +110,7 @@ def _build_trading_context(
     actual_taker = taker_fee if taker_fee is not None else COINBASE_TAKER_FEE
     actual_maker = maker_fee if maker_fee is not None else COINBASE_MAKER_FEE
 
-    if trading_mode == "live" and actual_taker == 0.0 and actual_maker == 0.0:
-        ctx = _LIVE_TRADING_CONTEXT_COINBASE_ONE.format(products=products_str)
-    elif trading_mode == "live":
+    if trading_mode == "live":
         ctx = _LIVE_TRADING_CONTEXT_STANDARD.format(
             products=products_str,
             taker_pct=f"{actual_taker:.1%}",
@@ -317,11 +299,6 @@ def parse_args() -> argparse.Namespace:
         help="Trading mode: affects fee info shown to agent in system prompt",
     )
     parser.add_argument(
-        "--coinbase-one",
-        action="store_true",
-        help="Enable Coinbase One (0%% fees) in the agent's trading context",
-    )
-    parser.add_argument(
         "--cash-reserve-pct",
         type=int,
         default=30,
@@ -355,7 +332,6 @@ async def main() -> None:
     trading_ctx = _build_trading_context(
         product=product,
         trading_mode=args.trading_mode,
-        coinbase_one=args.coinbase_one,
         cash_reserve_pct=args.cash_reserve_pct,
         taker_fee=args.taker_fee,
         maker_fee=args.maker_fee,

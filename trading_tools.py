@@ -49,9 +49,8 @@ TRADE_FEE_RATE = float(os.getenv("TRADE_FEE_RATE", "0.05"))  # 5% default (simul
 TAX_RATE = float(os.getenv("TAX_RATE", "0.30"))  # 30% combined federal + state short-term cap gains
 
 # Coinbase Advanced Trade fee schedule
-COINBASE_TAKER_FEE = 0.012   # 1.2% — market orders
-COINBASE_MAKER_FEE = 0.004   # 0.4% — limit orders
-COINBASE_ONE: bool = False    # Set True at startup if user has Coinbase One (0% fees)
+COINBASE_TAKER_FEE = 0.012   # 1.2% — market orders (auto-detected at startup)
+COINBASE_MAKER_FEE = 0.004   # 0.4% — limit orders (auto-detected at startup)
 
 MAX_BALANCE_HISTORY = 300  # ~25 min at 5s intervals
 
@@ -502,7 +501,7 @@ class AccountStore:
             cost = price * quantity
             # In live mode, use Coinbase fee for cash check (real fee comes from fills)
             if TRADING_MODE == "live":
-                fee_rate = 0.0 if COINBASE_ONE else COINBASE_TAKER_FEE
+                fee_rate = COINBASE_TAKER_FEE
             else:
                 fee_rate = TRADE_FEE_RATE
             fee = cost * fee_rate

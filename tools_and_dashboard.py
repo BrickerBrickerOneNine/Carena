@@ -119,11 +119,6 @@ def parse_args():
         default=0,
         help="Port for web dashboard (0 to disable, default: 0)",
     )
-    parser.add_argument(
-        "--coinbase-one",
-        action="store_true",
-        help="Enable Coinbase One fee tier (0%% trading fees)",
-    )
     return parser.parse_args()
 
 
@@ -221,13 +216,8 @@ async def main():
         taker_fee, maker_fee = trader.get_fee_rates()
         trading_tools.COINBASE_TAKER_FEE = taker_fee
         trading_tools.COINBASE_MAKER_FEE = maker_fee
-        if taker_fee == 0.0 and maker_fee == 0.0:
-            trading_tools.COINBASE_ONE = True
-            print("  Coinbase One detected (0% fees)")
-        else:
-            trading_tools.COINBASE_ONE = False
-            print(f"  Taker fee: {taker_fee:.2%} (market orders)")
-            print(f"  Maker fee: {maker_fee:.2%} (limit orders)")
+        print(f"  Taker fee: {taker_fee:.2%} (market orders)")
+        print(f"  Maker fee: {maker_fee:.2%} (limit orders)")
 
         # Sync agent accounts from real Coinbase balances (USD + crypto)
         print("\nSyncing agent accounts from Coinbase...")
