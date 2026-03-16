@@ -175,8 +175,8 @@ class CoinbaseKafkaConnector:
             }
             prompt_parts.append(
                 "\n## Price History (OHLCV candlesticks)\n"
-                "Below are candlesticks at three granularities — coarser for "
-                "broader trend context, finer for recent price action.\n\n"
+                "Below are candlesticks at six granularities — daily/6h/1h for "
+                "broader trend context, 15m/5m/1m for recent price action.\n\n"
                 f"{self._candle_book.format_prompt(self._products, ticker_data=ticker_data)}"
             )
 

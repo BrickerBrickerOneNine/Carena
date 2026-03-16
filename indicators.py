@@ -241,6 +241,9 @@ def compute_indicators_summary(
     c1 = candles_by_tf.get(60, [])
     c5 = candles_by_tf.get(300, [])
     c15 = candles_by_tf.get(900, [])
+    c1h = candles_by_tf.get(3600, [])
+    c6h = candles_by_tf.get(21600, [])
+    c1d = candles_by_tf.get(86400, [])
 
     # ── 1-min indicators (short-term, ~60 candles) ───────────────
     if c1:
@@ -306,6 +309,54 @@ def compute_indicators_summary(
         mom3 = momentum_pct(c15, 3)
         if mom3 is not None:
             lines.append(f"  Momentum(3): {mom3:+.3f}%")
+
+    # ── 1-hour indicators (2 days, ~48 candles) ───────────────
+    if c1h:
+        lines.append("1-hour timeframe (2 days):")
+        _append_common_indicators(lines, c1h, sma_periods=(12, 24), rsi_period=14, mom_periods=(6, 24))
+        ema12 = ema(c1h, 12)
+        if ema12 is not None:
+            trend = "ABOVE" if c1h[-1].close > ema12 else "BELOW"
+            lines.append(f"  EMA(12): {_fmt_price(ema12)} (price {trend})")
+        vwap_val = vwap(c1h)
+        if vwap_val is not None:
+            trend = "ABOVE" if c1h[-1].close > vwap_val else "BELOW"
+            lines.append(f"  VWAP: {_fmt_price(vwap_val)} (price {trend})")
+        obv_dir = obv_trend(c1h, 5)
+        if obv_dir is not None:
+            lines.append(f"  OBV trend: {obv_dir}")
+        div = rsi_divergence(c1h, 14, 10)
+        if div is not None:
+            lines.append(f"  RSI Divergence: {div}")
+
+    # ── 6-hour indicators (7 days, ~28 candles) ──────────────
+    if c6h:
+        lines.append("6-hour timeframe (7 days):")
+        _append_common_indicators(lines, c6h, sma_periods=(5, 14), rsi_period=14, mom_periods=(4, 7))
+        vwap_val = vwap(c6h)
+        if vwap_val is not None:
+            trend = "ABOVE" if c6h[-1].close > vwap_val else "BELOW"
+            lines.append(f"  VWAP: {_fmt_price(vwap_val)} (price {trend})")
+
+    # ── 1-day indicators (30 days, ~30 candles) ──────────────
+    if c1d:
+        lines.append("1-day timeframe (30 days):")
+        _append_common_indicators(lines, c1d, sma_periods=(7, 20), rsi_period=14, mom_periods=(7, 14))
+        bb = bollinger_bands(c1d, 20)
+        if bb is not None:
+            upper, mid_bb, lower = bb
+            price = c1d[-1].close
+            if price > upper:
+                bb_pos = "ABOVE upper band (overbought)"
+            elif price < lower:
+                bb_pos = "BELOW lower band (oversold)"
+            else:
+                pct_b = (price - lower) / (upper - lower) * 100 if upper != lower else 50
+                bb_pos = f"within bands ({pct_b:.0f}% from lower)"
+            lines.append(
+                f"  Bollinger(20,2): upper={_fmt_price(upper)} mid={_fmt_price(mid_bb)} "
+                f"lower={_fmt_price(lower)} | {bb_pos}"
+            )
 
     return "\n".join(lines)
 

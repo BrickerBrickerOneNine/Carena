@@ -131,6 +131,9 @@ class Timeframe:
 
 
 TIMEFRAMES = [
+    Timeframe(86400, 43200, 0, "1-day candles (last 30 days)"),
+    Timeframe(21600, 10080, 0, "6-hour candles (last 7 days)"),
+    Timeframe(3600, 2880, 0, "1-hour candles (last 2 days)"),
     Timeframe(900, 360, 0, "15-min candles (last 6 hours)"),
     Timeframe(300, 120, 0, "5-min candles (last 2 hours)"),
     Timeframe(60, 60, 0, "1-min candles (last 60 minutes)"),
