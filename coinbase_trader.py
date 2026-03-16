@@ -234,6 +234,21 @@ class CoinbaseTrader:
             logger.exception("Failed to fetch Coinbase balances: %s", e)
             return {}
 
+    def get_spot_price(self, product_id: str) -> float | None:
+        """Get the current spot (mid) price for a product from Coinbase."""
+        try:
+            resp = self._client.get_product(product_id)
+            if isinstance(resp, dict):
+                price = resp.get("price")
+            else:
+                price = getattr(resp, "price", None)
+            if price is not None:
+                return float(price)
+            return None
+        except Exception as e:
+            logger.warning("Failed to get spot price for %s: %s", product_id, e)
+            return None
+
     # ── Helpers ───────────────────────────────────────────────────
 
     def _enrich_with_fills(self, result: OrderResult) -> None:
