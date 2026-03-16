@@ -119,6 +119,12 @@ def parse_args():
         default=0,
         help="Port for web dashboard (0 to disable, default: 0)",
     )
+    parser.add_argument(
+        "--resync-interval",
+        type=float,
+        default=300.0,
+        help="Seconds between Coinbase balance re-syncs in live mode (0 to disable, default: 300)",
+    )
     return parser.parse_args()
 
 
@@ -351,6 +357,27 @@ async def main():
                     ]
                     push_activity(agent_name, "TOOL_RESULT", "\n".join(lines), trace_id, history_len)
 
+    # ── Coinbase balance resync loop (live mode only) ────────────
+    resync_task = None
+    if args.trading_mode == "live" and args.resync_interval > 0:
+        _resync_agents = list(store.accounts.keys())
+        _resync_num = max(1, len(_resync_agents))
+
+        async def _resync_loop() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(args.resync_interval)
+                    for agent_name in _resync_agents:
+                        result = store.resync_from_coinbase(agent_name, num_agents=_resync_num)
+                        if "no changes" not in result.lower():
+                            logger.info("Resync %s: %s", agent_name, result)
+                    view.rerender()
+            except asyncio.CancelledError:
+                raise
+
+        resync_task = asyncio.create_task(_resync_loop())
+        print(f"\nCoinbase balance resync enabled (every {args.resync_interval:.0f}s)")
+
     print("\nStarting portfolio dashboard (prices via Kafka)...")
 
     try:
@@ -360,6 +387,12 @@ async def main():
                 recorder.start_snapshot_loop(store, interval=args.snapshot_interval)
             await service.run()
     finally:
+        if resync_task is not None:
+            resync_task.cancel()
+            try:
+                await resync_task
+            except asyncio.CancelledError:
+                pass
         if recorder is not None:
             await recorder.close()
 

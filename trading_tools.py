@@ -438,6 +438,78 @@ class AccountStore:
             parts.append("No crypto positions")
         return " | ".join(parts)
 
+    def resync_from_coinbase(self, agent_id: str, num_agents: int = 1) -> str:
+        """Re-sync an agent's cash and positions from Coinbase without resetting P&L.
+
+        Unlike sync_from_coinbase() (which resets all counters for initial setup),
+        this method only updates cash and position quantities to match reality,
+        preserving trade history, P&L, fees, and other accounting state.
+        """
+        if self._coinbase_trader is None:
+            return "No Coinbase trader attached — cannot resync."
+
+        balances = self._coinbase_trader.get_balances(include_holds=True)
+        if not balances:
+            return "Failed to fetch Coinbase balances."
+        avail_balances = self._coinbase_trader.get_balances(include_holds=False)
+
+        account = self._accounts.get(agent_id)
+        if account is None:
+            return f"Agent '{agent_id}' not found — skipping resync."
+
+        # ── Cash ──────────────────────────────────────────────────
+        usd = avail_balances.pop("USD", 0.0)
+        new_cash = round(usd / max(1, num_agents), 2)
+        cash_delta = new_cash - account.cash
+        account.cash = new_cash
+
+        # ── Positions ─────────────────────────────────────────────
+        skip_currencies = {"USD", "USDC", "USDT", "DAI", "GUSD", "PAX"}
+        position_deltas: list[str] = []
+
+        # Build set of real positions from Coinbase
+        real_positions: dict[str, float] = {}
+        for currency, qty in balances.items():
+            if qty > 0 and currency not in skip_currencies:
+                real_positions[f"{currency}-USD"] = qty
+
+        # Update existing and add new positions
+        for product_id, real_qty in real_positions.items():
+            old_qty = account.positions.get(product_id, 0.0)
+            if abs(real_qty - old_qty) > 1e-8:
+                delta = real_qty - old_qty
+                account.positions[product_id] = real_qty
+                # Adjust cost basis proportionally
+                if old_qty > 0 and real_qty > 0:
+                    old_basis = account.cost_basis.get(product_id, 0.0)
+                    account.cost_basis[product_id] = old_basis * (real_qty / old_qty)
+                elif old_qty == 0:
+                    # New position we didn't track — use spot price as cost basis
+                    spot = self._coinbase_trader.get_spot_price(product_id)
+                    account.cost_basis[product_id] = real_qty * (spot or 0.0)
+                position_deltas.append(f"{product_id}: {old_qty:.6f} → {real_qty:.6f} ({delta:+.6f})")
+
+        # Remove positions that no longer exist on Coinbase
+        for product_id in list(account.positions.keys()):
+            if product_id not in real_positions:
+                old_qty = account.positions.pop(product_id)
+                account.cost_basis.pop(product_id, None)
+                account.avg_entry_ts.pop(product_id, None)
+                account.last_buy_ts.pop(product_id, None)
+                position_deltas.append(f"{product_id}: {old_qty:.6f} → 0 (removed)")
+
+        self.save_checkpoint()
+
+        if abs(cash_delta) < 0.01 and not position_deltas:
+            return "In sync — no changes."
+
+        parts = []
+        if abs(cash_delta) >= 0.01:
+            parts.append(f"Cash: ${account.cash - cash_delta:,.2f} → ${account.cash:,.2f} ({cash_delta:+,.2f})")
+        if position_deltas:
+            parts.append("Positions: " + ", ".join(position_deltas))
+        return "Resynced: " + " | ".join(parts)
+
     def cancel_all_orders(self, agent_id: str) -> TradeResult:
         """Cancel all pending limit orders for an agent."""
         before = len(self._pending_orders)

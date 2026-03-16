@@ -679,6 +679,7 @@ def launch_arena(config: dict) -> int:
         "--trading-mode", trading_mode,
         "--num-agents", num_agents,
         "--web-port", str(config.get("web_port", 8080)),
+        "--resync-interval", str(config.get("resync_interval", 300)),
     ]
     # Note: in live mode, credentials are read from arena_config.json
     # directly by tools_and_dashboard.py (avoids shell escaping issues)
