@@ -62,6 +62,7 @@ DEFAULT_CONFIG = {
     "snapshot_interval": 600,
     "data_dir": "./data",
     "web_port": 8080,
+    "cash_reserve_pct": 30,
 }
 
 
@@ -211,6 +212,13 @@ def run_wizard() -> dict:
         config["fee_rate"] = float(fee_str)
     except ValueError:
         config["fee_rate"] = 0.05
+    cash_reserve_str = Prompt.ask(
+        "  Cash reserve (% of portfolio to keep in cash, e.g. 30)", default="30"
+    )
+    try:
+        config["cash_reserve_pct"] = int(cash_reserve_str)
+    except ValueError:
+        config["cash_reserve_pct"] = 30
 
     # Summary
     console.print()
@@ -715,6 +723,7 @@ def launch_arena(config: dict) -> int:
                 "--product", coin,
                 "--bootstrap-servers", bootstrap,
                 "--trading-mode", trading_mode,
+                "--cash-reserve-pct", str(config.get("cash_reserve_pct", 30)),
             ]
             if coinbase_one:
                 router_args.append("--coinbase-one")

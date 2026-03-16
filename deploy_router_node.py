@@ -48,7 +48,6 @@ _TRADING_CONTEXT = (
     "- Fractional trading is supported (up to 6 decimal places).\n"
     "- You can use limit orders (place_limit_order) to set entries/exits at specific prices instead of market orders.\n"
     "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
-    "- CASH RESERVE: ALWAYS keep at least 30% of total portfolio value in cash. Check your portfolio before every buy.\n"
     "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it to cut losses.\n"
     "- Indicators at all timeframes (1-min through 1-day): SMA, RSI, Bollinger Bands, momentum, VWAP, OBV trend, RSI divergence.\n"
     "- You now have 30 DAYS of daily candles and 7 DAYS of 6-hour candles. USE THEM to understand the macro trend before trading."
@@ -66,7 +65,6 @@ _LIVE_TRADING_CONTEXT_STANDARD = (
     "- Buys execute at the best ask, sells at the best bid.\n"
     "- Fractional trading is supported (up to 6 decimal places).\n"
     "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
-    "- CASH RESERVE: ALWAYS keep at least 30% of total portfolio value in cash. Check your portfolio before every buy.\n"
     "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it.\n"
     "- Indicators at ALL timeframes (1-min through 1-day): SMA, RSI, Bollinger Bands, momentum, VWAP, OBV trend, RSI divergence.\n"
     "- You have 30 DAYS of daily candles and 7 DAYS of 6-hour candles. ALWAYS check the macro trend before trading.\n"
@@ -83,7 +81,6 @@ _LIVE_TRADING_CONTEXT_COINBASE_ONE = (
     "- Fractional trading is supported (up to 6 decimal places).\n"
     "- You can use limit orders (place_limit_order) or market orders (execute_trade) freely.\n"
     "- Position sizing: never put more than 40% of total portfolio value into a single position.\n"
-    "- CASH RESERVE: ALWAYS keep at least 30% of total portfolio value in cash. Check your portfolio before every buy.\n"
     "- Stop-loss discipline: if any position is down more than 2% from your entry cost, sell it.\n"
     "- Indicators at ALL timeframes (1-min through 1-day): SMA, RSI, Bollinger Bands, momentum, VWAP, OBV trend, RSI divergence.\n"
     "- You have 30 DAYS of daily candles and 7 DAYS of 6-hour candles. ALWAYS check the macro trend before trading."
@@ -118,6 +115,7 @@ def _build_trading_context(
     product: str | None = None,
     trading_mode: str = "simulated",
     coinbase_one: bool = False,
+    cash_reserve_pct: int = 30,
 ) -> str:
     """Build the trading context string, optionally focused on a single product."""
     products_str = product if product else ", ".join(DEFAULT_PRODUCTS)
@@ -143,6 +141,15 @@ def _build_trading_context(
 
     if product:
         ctx += _SINGLE_PRODUCT_FOCUS.format(product=product)
+
+    # Cash reserve rule (user-configurable)
+    if cash_reserve_pct > 0:
+        ctx += (
+            f"\n- CASH RESERVE: ALWAYS keep at least {cash_reserve_pct}% of your total portfolio "
+            f"value in cash. Before buying, check your portfolio and confirm cash won't drop "
+            f"below {cash_reserve_pct}% of total value. Reduce trade size or skip if it would."
+        )
+
     return ctx
 
 
@@ -175,9 +182,6 @@ _STRATEGY_BASES: dict[str, str] = {
         "  * Price is near or outside Bollinger Band boundaries on the 1-day timeframe\n"
         "  * Momentum across 1-hour AND 5-min timeframes confirms the direction\n"
         "- Position sizing: allocate 20-30% of your portfolio per trade, never more than 40%.\n"
-        "- CASH RESERVE: ALWAYS keep at least 30% of your total portfolio value in cash. "
-        "Before buying, check your portfolio and calculate: if cash would drop below 30% of total value, "
-        "reduce the trade size or skip the trade. Cash is your safety net and dry powder for better opportunities.\n"
         "- Stop-losses: if a position is down more than 2% from entry, sell it immediately.\n"
         "- Take profits: if a position is up more than 3%, consider taking partial profits.\n"
         "- If no clear signal exists, say 'No trade -- waiting for better setup' and do nothing.\n\n"
@@ -204,7 +208,6 @@ _STRATEGY_BASES: dict[str, str] = {
         "- 1-day trend has reversed (SMA7 crossed below SMA20)\n\n"
         "Position management:\n"
         "- Size positions at 25-35% of portfolio\n"
-        "- CASH RESERVE: ALWAYS keep at least 30% of your total portfolio value in cash.\n"
         "- Hold at most 2 positions at a time\n"
         "- Let winners run as long as 1-hour momentum stays positive\n"
         "- If no clear trend on the 1-day and 1-hour timeframes, STAY IN CASH.\n\n"
@@ -233,8 +236,7 @@ _STRATEGY_BASES: dict[str, str] = {
         "do not add to a losing position more than twice\n"
         "- Stop-loss: if a position is down more than 3% from entry, sell half to limit damage\n"
         "- If no extreme reading on the 1-hour+ timeframes (RSI between 35-65), DO NOTHING.\n"
-        "- Maximum 40% of portfolio in any single position\n"
-        "- CASH RESERVE: ALWAYS keep at least 30% of your total portfolio value in cash.\n\n"
+        "- Maximum 40% of portfolio in any single position\n\n"
         "You have access to tools to view your portfolio, execute trades, and a calculator."
     ),
     "swing": (
@@ -250,7 +252,6 @@ _STRATEGY_BASES: dict[str, str] = {
         "- Require the 1-day Bollinger Band position to confirm: buy in the lower half, sell in the upper half\n\n"
         "Position management:\n"
         "- Size positions at 30-40% of portfolio -- you take fewer, larger trades\n"
-        "- CASH RESERVE: ALWAYS keep at least 30% of your total portfolio value in cash.\n"
         "- Hold positions through short-term noise. Do NOT exit a position because of a "
         "1-min or 5-min dip if the 1-hour and 6-hour trends are still intact.\n"
         "- Plan to hold positions for hours, not minutes\n"
@@ -314,6 +315,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable Coinbase One (0%% fees) in the agent's trading context",
     )
+    parser.add_argument(
+        "--cash-reserve-pct",
+        type=int,
+        default=30,
+        help="Minimum percentage of portfolio to keep in cash (default: 30)",
+    )
     return parser.parse_args()
 
 
@@ -331,6 +338,7 @@ async def main() -> None:
         product=product,
         trading_mode=args.trading_mode,
         coinbase_one=args.coinbase_one,
+        cash_reserve_pct=args.cash_reserve_pct,
     )
     system_prompt = (
         _STRATEGY_BASES[args.strategy]
