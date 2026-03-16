@@ -155,7 +155,8 @@ async def main():
     state_file = _Path(args.state_file) if args.state_file else _Path(args.data_dir) / "arena_state.json"
     store.set_checkpoint_path(state_file)
 
-    if not args.no_restore:
+    if not args.no_restore and args.trading_mode != "live":
+        # In live mode, we always sync from Coinbase (see below) — skip checkpoint restore
         checkpoint = AccountStore.load_checkpoint(state_file)
         if checkpoint is not None:
             n_accounts = len(checkpoint.get("accounts", {}))
@@ -171,6 +172,8 @@ async def main():
                 print("State restored successfully.")
             else:
                 print("Starting fresh session.")
+    elif args.trading_mode == "live":
+        print("\nLive mode: agent accounts will be synced from Coinbase (checkpoint skipped).")
 
     # ── Trading mode ──────────────────────────────────────────────
     trading_tools.TRADING_MODE = args.trading_mode
@@ -215,25 +218,32 @@ async def main():
             trader = CoinbaseTrader(cb_key, cb_secret)
         store.attach_coinbase_trader(trader)
 
-        # Fetch real Coinbase USD balance and split across agents
-        print("\nFetching Coinbase account balance...")
-        try:
-            balances = trader.get_balances()
-            print(f"  All balances: {balances}")
-            # Use USD balance only (USDC is a separate crypto asset)
-            usd_balance = balances.get("USD", 0.0)
-            if usd_balance > 0:
-                num_agents = max(1, args.num_agents)
-                per_agent = round(usd_balance / num_agents, 2)
-                trading_tools.INITIAL_CASH = per_agent
-                print(f"  Coinbase balance: ${usd_balance:,.2f}")
-                print(f"  Per-agent starting cash: ${per_agent:,.2f} ({num_agents} agents)")
-            else:
-                print("  WARNING: USD/USDC balance is $0.00")
-                print(f"  Using default starting cash: ${trading_tools.INITIAL_CASH:,.2f}")
-        except Exception as e:
-            print(f"  ERROR fetching balance: {e}")
-            print(f"  Using default starting cash: ${trading_tools.INITIAL_CASH:,.2f}")
+        # Sync agent accounts from real Coinbase balances (USD + crypto)
+        print("\nSyncing agent accounts from Coinbase...")
+        num_agents = max(1, args.num_agents)
+        # Build agent names the same way the launcher does (strategy-symbol)
+        agent_names = []
+        _sync_config_path = _Path(__file__).resolve().parent / "arena_config.json"
+        if _sync_config_path.exists():
+            import json as _json_sync
+            try:
+                _sync_cfg = _json_sync.loads(_sync_config_path.read_text())
+                for strat in _sync_cfg.get("strategies", ["default"]):
+                    for coin in _sync_cfg.get("coins", ["BTC-USD"]):
+                        agent_names.append(f"{strat}-{coin.split('-')[0].lower()}")
+            except Exception:
+                pass
+        if not agent_names:
+            agent_names = [f"agent-{i}" for i in range(num_agents)]
+
+        for agent_name in agent_names:
+            result = store.sync_from_coinbase(agent_name, num_agents=num_agents)
+            print(f"  {agent_name}: {result}")
+
+        # Update INITIAL_CASH to match synced value for display purposes
+        if agent_names:
+            first_acct = store.get_or_create(agent_names[0])
+            trading_tools.INITIAL_CASH = first_acct.initial_cash
 
     mode_label = "LIVE (real Coinbase orders)" if args.trading_mode == "live" else "SIMULATED"
     print("=" * 50)

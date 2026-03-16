@@ -245,6 +245,7 @@ class AccountStore:
         self._pending_orders: list[LimitOrder] = []
         self._coinbase_trader: object | None = None  # CoinbaseTrader when live
         self._checkpoint_path: Path | None = None
+        self._pending_initial_sync: set[str] = set()  # agent_ids needing initial_cash recalc
 
     def attach_recorder(self, recorder: TradeRecorder) -> None:
         self._data_recorder = recorder
@@ -363,6 +364,72 @@ class AccountStore:
             result = self.execute_trade(agent_id, pid, qty, "sell")
             results.append(f"{pid}: {result.message}")
         return TradeResult(True, f"Liquidated all positions for '{agent_id}'. " + " | ".join(results))
+
+    def sync_from_coinbase(self, agent_id: str, num_agents: int = 1) -> str:
+        """Sync an agent's account to match real Coinbase balances.
+
+        Queries Coinbase for actual USD + crypto holdings and overwrites
+        the agent's cash and positions.  In multi-agent mode, USD is split
+        evenly but crypto positions are only assigned to the first agent
+        (since we can't know which agent owns which position).
+        """
+        if self._coinbase_trader is None:
+            return "No Coinbase trader attached — cannot sync."
+
+        balances = self._coinbase_trader.get_balances()
+        if not balances:
+            return "Failed to fetch Coinbase balances."
+
+        account = self.get_or_create(agent_id)
+
+        # USD cash (split across agents)
+        usd = balances.pop("USD", 0.0)
+        per_agent_usd = round(usd / max(1, num_agents), 2)
+        account.cash = per_agent_usd
+        account.initial_cash = per_agent_usd
+        account.peak_value = per_agent_usd
+
+        # Crypto positions — map to Coinbase product IDs (e.g. ETH -> ETH-USD)
+        account.positions.clear()
+        account.cost_basis.clear()
+        synced_positions = []
+        for currency, qty in balances.items():
+            if qty <= 0:
+                continue
+            product_id = f"{currency}-USD"
+            account.positions[product_id] = qty
+            # We don't know the original cost basis, so set it to 0
+            # (P&L will be tracked from this point forward)
+            account.cost_basis[product_id] = 0.0
+            synced_positions.append(f"{qty:.6f} {currency} ({product_id})")
+
+        # Reset P&L counters since we're starting fresh from real state
+        account.total_pnl_realized = 0.0
+        account.total_fees = 0.0
+        account.wins = 0
+        account.losses = 0
+        account.trade_count = 0
+        account.consecutive_losses = 0
+        account.max_drawdown = 0.0
+
+        # Recalculate peak_value to include crypto positions (if prices available)
+        portfolio_val = account.portfolio_value(self._price_book)
+        if portfolio_val > per_agent_usd:
+            # Prices are available — include crypto value
+            account.peak_value = portfolio_val
+            account.initial_cash = portfolio_val
+        elif synced_positions:
+            # Prices not yet available — defer recalculation to first price update
+            self._pending_initial_sync.add(agent_id)
+
+        self.save_checkpoint()
+
+        parts = [f"Synced from Coinbase: ${per_agent_usd:,.2f} USD"]
+        if synced_positions:
+            parts.append("Positions: " + ", ".join(synced_positions))
+        else:
+            parts.append("No crypto positions")
+        return " | ".join(parts)
 
     def cancel_all_orders(self, agent_id: str) -> TradeResult:
         """Cancel all pending limit orders for an agent."""
@@ -668,6 +735,26 @@ class AccountStore:
 
     def check_and_fill_orders(self) -> list[str]:
         """Check all pending limit orders against current prices. Returns list of fill messages."""
+        # Deferred initial_cash sync for agents with crypto positions
+        # (prices weren't available at startup, now they are)
+        if self._pending_initial_sync:
+            done = set()
+            for aid in self._pending_initial_sync:
+                acct = self._accounts.get(aid)
+                if acct is None:
+                    done.add(aid)
+                    continue
+                pv = acct.portfolio_value(self._price_book)
+                if pv > acct.cash:
+                    # Prices are now available
+                    acct.initial_cash = pv
+                    acct.peak_value = pv
+                    done.add(aid)
+                    logger.info("Synced initial_cash for %s: $%.2f (incl. crypto)", aid, pv)
+            self._pending_initial_sync -= done
+            if done:
+                self.save_checkpoint()
+
         # In live mode, Coinbase handles limit order fills on the exchange.
         # Don't also fire local market orders — that would double-execute.
         if TRADING_MODE == "live":
