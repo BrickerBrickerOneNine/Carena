@@ -252,7 +252,10 @@ def compute_snap(candles: list[Candle], sma_s: int, sma_l: int, mom_s: int, mom_
 
 class Signal(enum.Enum):
     BUY = "buy"
+    BUY_SMALL = "buy_small"   # ~10% of portfolio (graduated entry tier 1)
+    BUY_LARGE = "buy_large"   # ~25% of portfolio (graduated entry tier 3)
     SELL = "sell"
+    SELL_HALF = "sell_half"   # partial exit
     HOLD = "hold"
 
 
@@ -469,19 +472,46 @@ def strategy_contrarian_old(
 def strategy_contrarian_new(
     h: Snap, d: Snap, account: BacktestAccount, product: str
 ) -> Signal:
-    """New contrarian: ATR-based stop, 30% max position."""
+    """Improved contrarian: same strict entries, better exits.
+
+    Changes from old (exits only):
+    - Stop: ATR-based instead of fixed 3%
+    - Exit: sell HALF at RSI > 70, sell rest at RSI > 80 (let winners run)
+    - Exit: breakeven stop protects gains after +3%
+    Entry rules are IDENTICAL to old.
+    """
     held = product in account.positions
 
     if held:
         entry = account.entry_prices.get(product, h.price)
+        gain_pct = (h.price - entry) / entry if entry > 0 else 0
+
+        # ATR-based stop-loss
         if _atr_stop(h, entry, h.price):
             return Signal.SELL
-        if h.rsi_val is not None and h.rsi_val > 70:
+
+        # Breakeven stop: if up > 3%, don't let it turn into a loss
+        if gain_pct > 0.03 and h.price < entry * 1.005:
+            return Signal.SELL
+
+        # Partial exit: sell half at RSI > 70, but only in bullish macro trend
+        # In bear trends, close fully (avoid churn in chop)
+        if h.rsi_val is not None and h.rsi_val > 70 and h.rsi_val <= 80:
+            macro_bullish = (d.sma_short is not None and d.sma_long is not None
+                            and d.sma_short > d.sma_long)
+            if macro_bullish and gain_pct > 0.01:
+                return Signal.SELL_HALF
+            else:
+                return Signal.SELL
+        # Full exit at RSI > 80 or daily BB upper
+        if h.rsi_val is not None and h.rsi_val > 80:
             return Signal.SELL
         if d.bb_upper is not None and h.price >= d.bb_upper:
             return Signal.SELL
+
         return Signal.HOLD
 
+    # ── Entry rules (IDENTICAL to old) ──
     if h.rsi_val is None or h.rsi_val > 30:
         return Signal.HOLD
     if d.bb_lower is not None and h.price > d.bb_lower:
@@ -624,14 +654,30 @@ def run_backtest(
         signal = strategy_fn(h_snap, d_snap, account, product)
         price = current.close
 
-        if signal == Signal.BUY and product not in account.positions:
+        if signal in (Signal.BUY, Signal.BUY_SMALL, Signal.BUY_LARGE):
+            # Determine position size based on signal tier
+            if signal == Signal.BUY_SMALL:
+                size_pct = 0.10
+            elif signal == Signal.BUY_LARGE:
+                size_pct = 0.25
+            else:
+                size_pct = POSITION_SIZE_PCT  # 0.20
+
             portfolio_val = account.portfolio_value({product: price})
-            trade_value = min(portfolio_val * POSITION_SIZE_PCT, portfolio_val * MAX_POSITION_PCT)
-            qty = trade_value / price
-            account.buy(product, qty, price, fee_rate)
+            # Check max position limit (allow adding to existing positions for graduated entry)
+            current_exposure = account.positions.get(product, 0.0) * price
+            max_allowed = portfolio_val * MAX_POSITION_PCT - current_exposure
+            trade_value = min(portfolio_val * size_pct, max_allowed)
+            if trade_value > 0:
+                qty = trade_value / price
+                account.buy(product, qty, price, fee_rate)
 
         elif signal == Signal.SELL and product in account.positions:
             qty = account.positions[product]
+            account.sell(product, qty, price, fee_rate)
+
+        elif signal == Signal.SELL_HALF and product in account.positions:
+            qty = account.positions[product] / 2
             account.sell(product, qty, price, fee_rate)
 
         account.update_drawdown({product: price})
