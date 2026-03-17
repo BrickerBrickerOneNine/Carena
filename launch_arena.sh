@@ -121,42 +121,62 @@ fi
 log "uv available ✓"
 
 # ---------------------------------------------------------------------------
-# Helper: open tabs in a single Terminal.app window
+# Helper: build a single AppleScript to open all tabs at once
 # ---------------------------------------------------------------------------
-_FIRST_TAB=true
+_TABSCRIPT=""
 
-open_tab() {
+# Escape a string for inclusion in an AppleScript double-quoted string
+_esc() {
+    local s="$1"
+    s="${s//\\/\\\\}"   # \ → \\
+    s="${s//\"/\\\"}"   # " → \"
+    printf '%s' "$s"
+}
+
+# Open the first tab (creates a new Terminal window)
+open_first_tab() {
     local title="$1"
     local cmd="$2"
-    log "Opening tab: ${CYAN}${title}${NC}"
+    log "Opening window: ${CYAN}${title}${NC}"
+    local esc
+    esc=$(_esc "printf '\e]0;${title}\a'; ${cmd}")
+    _TABSCRIPT=$(mktemp /tmp/arena_launch.XXXXXX)
+    printf 'tell application "Terminal"\n    activate\n    do script "%s"\nend tell\n' "$esc" > "$_TABSCRIPT"
+}
 
-    if $_FIRST_TAB; then
-        # First call: create a new window
-        osascript -e "
-            tell application \"Terminal\"
-                activate
-                do script \"printf '\\\\e]0;${title}\\\\a'; ${cmd}\"
-            end tell
-        "
-        _FIRST_TAB=false
-    else
-        # Subsequent calls: new tab in the same window
-        osascript -e "
-            tell application \"Terminal\"
-                activate
-            end tell
-            tell application \"System Events\"
-                tell process \"Terminal\"
-                    keystroke \"t\" using command down
-                end tell
-            end tell
-            delay 0.5
-            tell application \"Terminal\"
-                do script \"printf '\\\\e]0;${title}\\\\a'; ${cmd}\" in selected tab of front window
-            end tell
-        "
+# Queue a new tab to be opened in the existing window
+queue_tab() {
+    local title="$1"
+    local cmd="$2"
+    log "  Queued tab: ${CYAN}${title}${NC}"
+    local esc
+    esc=$(_esc "printf '\e]0;${title}\a'; ${cmd}")
+    printf 'tell application "System Events"\n' >> "$_TABSCRIPT"
+    printf '    tell process "Terminal"\n' >> "$_TABSCRIPT"
+    printf '        keystroke "t" using {command down}\n' >> "$_TABSCRIPT"
+    printf '    end tell\n' >> "$_TABSCRIPT"
+    printf 'end tell\n' >> "$_TABSCRIPT"
+    printf 'delay 0.5\n' >> "$_TABSCRIPT"
+    printf 'tell application "Terminal"\n' >> "$_TABSCRIPT"
+    printf '    do script "%s" in selected tab of front window\n' "$esc" >> "$_TABSCRIPT"
+    printf 'end tell\n' >> "$_TABSCRIPT"
+    printf 'delay 0.3\n' >> "$_TABSCRIPT"
+}
+
+# Add a delay between groups (embedded in the AppleScript)
+queue_delay() {
+    printf 'delay %s\n' "$1" >> "$_TABSCRIPT"
+}
+
+# Execute the built-up AppleScript and clean up
+flush_tabs() {
+    log "Launching all tabs..."
+    if ! osascript "$_TABSCRIPT" 2>/dev/null; then
+        warn "Tab creation may have failed."
+        warn "Grant Terminal accessibility permissions:"
+        warn "  System Settings → Privacy & Security → Accessibility → Terminal"
     fi
-    sleep 1
+    rm -f "$_TABSCRIPT"
 }
 
 # ===========================================================================
@@ -165,8 +185,11 @@ open_tab() {
 
 header "Step 1/6 — Kafka Broker"
 
-open_tab "Kafka Broker" \
+# Kafka gets the first tab (creates a new Terminal window)
+open_first_tab "Kafka Broker" \
     "cd $BROKER_DIR && make dev-up"
+osascript "$_TABSCRIPT" 2>/dev/null
+# Don't rm — we'll keep building on this file for remaining tabs
 
 log "Waiting for Kafka broker at $BOOTSTRAP..."
 kafka_wait=0
@@ -183,56 +206,55 @@ sleep 5
 log "Kafka is ready ✓"
 
 # ---------------------------------------------------------------------------
-header "Step 2/6 — Coinbase Market Data"
+header "Steps 2-6 — Remaining Components"
 
-open_tab "Coinbase Connector" \
+# Reset the script file for the remaining tabs
+: > "$_TABSCRIPT"
+
+# Step 2: Coinbase Market Data
+queue_tab "Coinbase Connector" \
     "cd $ARENA_DIR && uv run python coinbase_connector.py --bootstrap-servers $BOOTSTRAP --interval $MARKET_INTERVAL"
 
-# ---------------------------------------------------------------------------
-header "Step 3/6 — Tools & Dashboard"
-
-open_tab "Tools and Dashboard" \
+# Step 3: Tools & Dashboard
+queue_tab "Tools and Dashboard" \
     "cd $ARENA_DIR && uv run python tools_and_dashboard.py --bootstrap-servers $BOOTSTRAP"
 
-sleep 3
+queue_delay 3
 
-# ---------------------------------------------------------------------------
-header "Step 4/6 — ChatNodes (LLM Inference)"
-
-open_tab "ChatNode GPT-5 Mini" \
+# Step 4: ChatNode
+queue_tab "ChatNode GPT-5 Mini" \
     "cd $ARENA_DIR && uv run python deploy_chat_node.py --name mini-node --model-id gpt-5-mini-2025-07-18 --bootstrap-servers $BOOTSTRAP --api-key $OPENAI_API_KEY"
 
-sleep 3
+queue_delay 3
 
-# ---------------------------------------------------------------------------
-header "Step 5/6 — Agent Routers (1 agent per coin, contrarian strategy)"
-
-open_tab "Agent contrarian-BTC" \
+# Step 5: Agent Routers (1 agent per coin, contrarian strategy)
+queue_tab "Agent contrarian-BTC" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-btc --chat-node-name mini-node --strategy contrarian --product BTC-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-ETH" \
+queue_tab "Agent contrarian-ETH" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-eth --chat-node-name mini-node --strategy contrarian --product ETH-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-SOL" \
+queue_tab "Agent contrarian-SOL" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-sol --chat-node-name mini-node --strategy contrarian --product SOL-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-LTC" \
+queue_tab "Agent contrarian-LTC" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-ltc --chat-node-name mini-node --strategy contrarian --product LTC-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-DOGE" \
+queue_tab "Agent contrarian-DOGE" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-doge --chat-node-name mini-node --strategy contrarian --product DOGE-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-LINK" \
+queue_tab "Agent contrarian-LINK" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-link --chat-node-name mini-node --strategy contrarian --product LINK-USD --bootstrap-servers $BOOTSTRAP"
 
-open_tab "Agent contrarian-XRP" \
+queue_tab "Agent contrarian-XRP" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-xrp --chat-node-name mini-node --strategy contrarian --product XRP-USD --bootstrap-servers $BOOTSTRAP"
 
-# ---------------------------------------------------------------------------
-header "Step 6/6 — Response Viewer"
-
-open_tab "Response Viewer" \
+# Step 6: Response Viewer
+queue_tab "Response Viewer" \
     "cd $ARENA_DIR && uv run python response_viewer.py --bootstrap-servers $BOOTSTRAP"
+
+# Execute all queued tabs in a single AppleScript call
+flush_tabs
 
 # ===========================================================================
 # Summary
