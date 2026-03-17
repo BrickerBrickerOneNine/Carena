@@ -159,7 +159,22 @@ class CoinbaseKafkaConnector:
         }
         batch_json = json.dumps([t.model_dump(exclude=_exclude) for t in batch])
 
+        from datetime import datetime, timezone
+
+        utc_now = datetime.now(timezone.utc)
+        timestamp_str = utc_now.strftime("%Y-%m-%d %H:%M UTC (%A)")
+        hour = utc_now.hour
+        if 13 <= hour < 21:
+            session_note = "US market hours — high liquidity"
+        elif 0 <= hour < 8:
+            session_note = "Asian session — lower liquidity, wider spreads possible"
+        elif 8 <= hour < 13:
+            session_note = "European session — moderate liquidity"
+        else:
+            session_note = "Late US / early Asian — liquidity thinning"
+
         prompt_parts = [
+            f"Current time: {timestamp_str} ({session_note})\n\n"
             "Here is the latest ticker information. You should view your "
             "portfolio first before making any decisions to trade.\n"
             "price = last traded price, best_bid = price you sell at, "

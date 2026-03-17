@@ -115,6 +115,23 @@ def momentum_pct(candles: list[Candle], period: int) -> float | None:
     return ((candles[-1].close - old) / old) * 100.0
 
 
+def atr(candles: list[Candle], period: int = 14) -> float | None:
+    """Average True Range over the last *period* candles. Returns the ATR in price units."""
+    if len(candles) < period + 1:
+        return None
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high_low = candles[i].high - candles[i].low
+        high_prev_close = abs(candles[i].high - candles[i - 1].close)
+        low_prev_close = abs(candles[i].low - candles[i - 1].close)
+        true_ranges.append(max(high_low, high_prev_close, low_prev_close))
+    # Wilder's smoothing
+    atr_val = sum(true_ranges[:period]) / period
+    for tr in true_ranges[period:]:
+        atr_val = (atr_val * (period - 1) + tr) / period
+    return atr_val
+
+
 def spread_pct(bid: float, ask: float) -> float:
     """Spread as percentage of mid-price."""
     mid = (bid + ask) / 2
@@ -127,7 +144,7 @@ def vwap(candles: list[Candle]) -> float | None:
     """Volume-Weighted Average Price."""
     if not candles:
         return None
-    total_vp = sum(c.close * c.volume for c in candles)
+    total_vp = sum((c.high + c.low + c.close) / 3 * c.volume for c in candles)
     total_vol = sum(c.volume for c in candles)
     if total_vol == 0:
         return None
@@ -328,6 +345,15 @@ def compute_indicators_summary(
         div = rsi_divergence(c1h, 14, 10)
         if div is not None:
             lines.append(f"  RSI Divergence: {div}")
+        macd_val = macd(c1h)
+        if macd_val is not None:
+            ml, sl, hist = macd_val
+            signal = "BULLISH" if hist > 0 else "BEARISH"
+            lines.append(f"  MACD: line={ml:.2f} signal={sl:.2f} hist={hist:.2f} ({signal})")
+        atr_val = atr(c1h, 14)
+        if atr_val is not None:
+            atr_pct = atr_val / c1h[-1].close * 100 if c1h[-1].close > 0 else 0
+            lines.append(f"  ATR(14): {_fmt_price(atr_val)} ({atr_pct:.2f}% of price)")
 
     # ── 6-hour indicators (7 days, ~28 candles) ──────────────
     if c6h:
@@ -337,6 +363,10 @@ def compute_indicators_summary(
         if vwap_val is not None:
             trend = "ABOVE" if c6h[-1].close > vwap_val else "BELOW"
             lines.append(f"  VWAP: {_fmt_price(vwap_val)} (price {trend})")
+        atr_val = atr(c6h, 14)
+        if atr_val is not None:
+            atr_pct = atr_val / c6h[-1].close * 100 if c6h[-1].close > 0 else 0
+            lines.append(f"  ATR(14): {_fmt_price(atr_val)} ({atr_pct:.2f}% of price)")
 
     # ── 1-day indicators (30 days, ~30 candles) ──────────────
     if c1d:
@@ -357,6 +387,15 @@ def compute_indicators_summary(
                 f"  Bollinger(20,2): upper={_fmt_price(upper)} mid={_fmt_price(mid_bb)} "
                 f"lower={_fmt_price(lower)} | {bb_pos}"
             )
+        macd_val = macd(c1d)
+        if macd_val is not None:
+            ml, sl, hist = macd_val
+            signal = "BULLISH" if hist > 0 else "BEARISH"
+            lines.append(f"  MACD: line={ml:.2f} signal={sl:.2f} hist={hist:.2f} ({signal})")
+        atr_val = atr(c1d, 14)
+        if atr_val is not None:
+            atr_pct = atr_val / c1d[-1].close * 100 if c1d[-1].close > 0 else 0
+            lines.append(f"  ATR(14): {_fmt_price(atr_val)} ({atr_pct:.2f}% of price)")
 
     return "\n".join(lines)
 
