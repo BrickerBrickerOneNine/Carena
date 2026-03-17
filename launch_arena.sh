@@ -199,8 +199,8 @@ sleep 3
 # ---------------------------------------------------------------------------
 header "Step 4/6 — ChatNodes (LLM Inference)"
 
-open_tab "ChatNode GPT-5 Nano" \
-    "cd $ARENA_DIR && uv run python deploy_chat_node.py --name nano-node --model-id gpt-5-nano-2025-08-07 --bootstrap-servers $BOOTSTRAP --api-key $OPENAI_API_KEY"
+open_tab "ChatNode GPT-5 Mini" \
+    "cd $ARENA_DIR && uv run python deploy_chat_node.py --name mini-node --model-id gpt-5-mini-2025-07-18 --bootstrap-servers $BOOTSTRAP --api-key $OPENAI_API_KEY"
 
 sleep 3
 
@@ -208,25 +208,25 @@ sleep 3
 header "Step 5/6 — Agent Routers (1 agent per coin, contrarian strategy)"
 
 open_tab "Agent contrarian-BTC" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-btc --chat-node-name nano-node --strategy contrarian --product BTC-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-btc --chat-node-name mini-node --strategy contrarian --product BTC-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-ETH" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-eth --chat-node-name nano-node --strategy contrarian --product ETH-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-eth --chat-node-name mini-node --strategy contrarian --product ETH-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-SOL" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-sol --chat-node-name nano-node --strategy contrarian --product SOL-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-sol --chat-node-name mini-node --strategy contrarian --product SOL-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-LTC" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-ltc --chat-node-name nano-node --strategy contrarian --product LTC-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-ltc --chat-node-name mini-node --strategy contrarian --product LTC-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-DOGE" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-doge --chat-node-name nano-node --strategy contrarian --product DOGE-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-doge --chat-node-name mini-node --strategy contrarian --product DOGE-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-LINK" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-link --chat-node-name nano-node --strategy contrarian --product LINK-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-link --chat-node-name mini-node --strategy contrarian --product LINK-USD --bootstrap-servers $BOOTSTRAP"
 
 open_tab "Agent contrarian-XRP" \
-    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-xrp --chat-node-name nano-node --strategy contrarian --product XRP-USD --bootstrap-servers $BOOTSTRAP"
+    "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-xrp --chat-node-name mini-node --strategy contrarian --product XRP-USD --bootstrap-servers $BOOTSTRAP"
 
 # ---------------------------------------------------------------------------
 header "Step 6/6 — Response Viewer"
@@ -245,7 +245,7 @@ echo -e "  ${BOLD}12 tabs opened in one Terminal window:${NC}"
 echo -e "    ${GREEN}●${NC} Kafka Broker"
 echo -e "    ${GREEN}●${NC} Coinbase Connector (${MARKET_INTERVAL}s interval)"
 echo -e "    ${GREEN}●${NC} Tools & Dashboard"
-echo -e "    ${GREEN}●${NC} ChatNode: nano-node (gpt-5-nano)"
+echo -e "    ${GREEN}●${NC} ChatNode: mini-node (gpt-5-mini)"
 echo -e "    ${GREEN}●${NC} Agent: contrarian-btc  (BTC-USD)"
 echo -e "    ${GREEN}●${NC} Agent: contrarian-eth  (ETH-USD)"
 echo -e "    ${GREEN}●${NC} Agent: contrarian-sol  (SOL-USD)"
