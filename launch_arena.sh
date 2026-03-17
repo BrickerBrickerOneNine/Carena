@@ -2,8 +2,7 @@
 # =============================================================================
 # launch_arena.sh — Start the entire Crypto Daytrading Arena
 #
-# Opens a separate Terminal.app window for each component, exactly like
-# running each command manually in its own tab.
+# Opens a single Terminal.app window with a tab for each component.
 #
 # Usage:
 #   ./launch_arena.sh              # launch everything
@@ -122,18 +121,41 @@ fi
 log "uv available ✓"
 
 # ---------------------------------------------------------------------------
-# Helper: open a new Terminal.app window and run a command
+# Helper: open tabs in a single Terminal.app window
 # ---------------------------------------------------------------------------
-open_terminal() {
+_FIRST_TAB=true
+
+open_tab() {
     local title="$1"
     local cmd="$2"
-    log "Opening window: ${CYAN}${title}${NC}"
-    osascript -e "
-        tell application \"Terminal\"
-            activate
-            do script \"printf '\\\\e]0;${title}\\\\a'; ${cmd}\"
-        end tell
-    "
+    log "Opening tab: ${CYAN}${title}${NC}"
+
+    if $_FIRST_TAB; then
+        # First call: create a new window
+        osascript -e "
+            tell application \"Terminal\"
+                activate
+                do script \"printf '\\\\e]0;${title}\\\\a'; ${cmd}\"
+            end tell
+        "
+        _FIRST_TAB=false
+    else
+        # Subsequent calls: new tab in the same window
+        osascript -e "
+            tell application \"Terminal\"
+                activate
+            end tell
+            tell application \"System Events\"
+                tell process \"Terminal\"
+                    keystroke \"t\" using command down
+                end tell
+            end tell
+            delay 0.5
+            tell application \"Terminal\"
+                do script \"printf '\\\\e]0;${title}\\\\a'; ${cmd}\" in selected tab of front window
+            end tell
+        "
+    fi
     sleep 1
 }
 
@@ -143,7 +165,7 @@ open_terminal() {
 
 header "Step 1/6 — Kafka Broker"
 
-open_terminal "Kafka Broker" \
+open_tab "Kafka Broker" \
     "cd $BROKER_DIR && make dev-up"
 
 log "Waiting for Kafka broker at $BOOTSTRAP..."
@@ -163,13 +185,13 @@ log "Kafka is ready ✓"
 # ---------------------------------------------------------------------------
 header "Step 2/6 — Coinbase Market Data"
 
-open_terminal "Coinbase Connector" \
+open_tab "Coinbase Connector" \
     "cd $ARENA_DIR && uv run python coinbase_connector.py --bootstrap-servers $BOOTSTRAP --interval $MARKET_INTERVAL"
 
 # ---------------------------------------------------------------------------
 header "Step 3/6 — Tools & Dashboard"
 
-open_terminal "Tools and Dashboard" \
+open_tab "Tools and Dashboard" \
     "cd $ARENA_DIR && uv run python tools_and_dashboard.py --bootstrap-servers $BOOTSTRAP"
 
 sleep 3
@@ -177,7 +199,7 @@ sleep 3
 # ---------------------------------------------------------------------------
 header "Step 4/6 — ChatNodes (LLM Inference)"
 
-open_terminal "ChatNode GPT-5 Nano" \
+open_tab "ChatNode GPT-5 Nano" \
     "cd $ARENA_DIR && uv run python deploy_chat_node.py --name nano-node --model-id gpt-5-nano-2025-08-07 --bootstrap-servers $BOOTSTRAP --api-key $OPENAI_API_KEY"
 
 sleep 3
@@ -185,31 +207,31 @@ sleep 3
 # ---------------------------------------------------------------------------
 header "Step 5/6 — Agent Routers (1 agent per coin, contrarian strategy)"
 
-open_terminal "Agent contrarian-BTC" \
+open_tab "Agent contrarian-BTC" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-btc --chat-node-name nano-node --strategy contrarian --product BTC-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-ETH" \
+open_tab "Agent contrarian-ETH" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-eth --chat-node-name nano-node --strategy contrarian --product ETH-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-SOL" \
+open_tab "Agent contrarian-SOL" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-sol --chat-node-name nano-node --strategy contrarian --product SOL-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-LTC" \
+open_tab "Agent contrarian-LTC" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-ltc --chat-node-name nano-node --strategy contrarian --product LTC-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-DOGE" \
+open_tab "Agent contrarian-DOGE" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-doge --chat-node-name nano-node --strategy contrarian --product DOGE-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-LINK" \
+open_tab "Agent contrarian-LINK" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-link --chat-node-name nano-node --strategy contrarian --product LINK-USD --bootstrap-servers $BOOTSTRAP"
 
-open_terminal "Agent contrarian-XRP" \
+open_tab "Agent contrarian-XRP" \
     "cd $ARENA_DIR && uv run python deploy_router_node.py --name contrarian-xrp --chat-node-name nano-node --strategy contrarian --product XRP-USD --bootstrap-servers $BOOTSTRAP"
 
 # ---------------------------------------------------------------------------
 header "Step 6/6 — Response Viewer"
 
-open_terminal "Response Viewer" \
+open_tab "Response Viewer" \
     "cd $ARENA_DIR && uv run python response_viewer.py --bootstrap-servers $BOOTSTRAP"
 
 # ===========================================================================
@@ -219,7 +241,7 @@ open_terminal "Response Viewer" \
 header "Arena is Live!"
 
 echo ""
-echo -e "  ${BOLD}12 Terminal windows opened:${NC}"
+echo -e "  ${BOLD}12 tabs opened in one Terminal window:${NC}"
 echo -e "    ${GREEN}●${NC} Kafka Broker"
 echo -e "    ${GREEN}●${NC} Coinbase Connector (${MARKET_INTERVAL}s interval)"
 echo -e "    ${GREEN}●${NC} Tools & Dashboard"
@@ -235,5 +257,5 @@ echo -e "    ${GREEN}●${NC} Response Viewer"
 echo ""
 echo -e "  ${BOLD}To stop:${NC}"
 echo -e "    1. Run: ${YELLOW}./launch_arena.sh --teardown${NC} (stops Kafka)"
-echo -e "    2. Close Terminal windows (⌘Q) or Ctrl+C in each"
+echo -e "    2. Close the Terminal window (⌘W) or Ctrl+C in each tab"
 echo ""
