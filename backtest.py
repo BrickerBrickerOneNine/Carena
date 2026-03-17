@@ -490,8 +490,10 @@ def strategy_contrarian_new(
         if _atr_stop(h, entry, h.price):
             return Signal.SELL
 
-        # Breakeven stop: if up > 3%, don't let it turn into a loss
-        if gain_pct > 0.03 and h.price < entry * 1.005:
+        # Breakeven stop: if up > 5% (enough to cover round-trip fees),
+        # don't let it drop back to break-even. Fee-aware: entry fee already
+        # paid, exit fee ~1.2%, so true breakeven is entry * 1.012.
+        if gain_pct > 0.05 and h.price < entry * 1.015:
             return Signal.SELL
 
         # Partial exit: sell half at RSI > 70, but only in bullish macro trend
@@ -499,7 +501,7 @@ def strategy_contrarian_new(
         if h.rsi_val is not None and h.rsi_val > 70 and h.rsi_val <= 80:
             macro_bullish = (d.sma_short is not None and d.sma_long is not None
                             and d.sma_short > d.sma_long)
-            if macro_bullish and gain_pct > 0.01:
+            if macro_bullish and gain_pct > 0.03:  # need >3% to justify partial exit fees
                 return Signal.SELL_HALF
             else:
                 return Signal.SELL
